@@ -1,14 +1,21 @@
-{ lib, stdenv, fetchFromGitHub, which, cudatoolkit, addOpenGLRunpath }:
+{ lib, stdenv, fetchFromGitHub, which, cudaPackages, addOpenGLRunpath }:
+
+let
+  inherit (cudaPackages) cudatoolkit;
+  inherit (cudaPackages.cudaFlags) cudaGencode;
+  inherit (lib.strings) concatStringsSep;
+  nvcc_gencode = concatStringsSep " " cudaGencode;
+in
 
 stdenv.mkDerivation rec {
   name = "nccl-${version}-cuda-${cudatoolkit.majorVersion}";
-  version = "2.12.10-1";
+  version = "2.16.5-1";
 
   src = fetchFromGitHub {
     owner = "NVIDIA";
     repo = "nccl";
     rev = "v${version}";
-    sha256 = "sha256-QqORzm0gD+QG+P8rId8bQn2oZsxL5YyxCIobUVs85wE=";
+    sha256 = "sha256-JyhhYKSVIqUKIbC1rCJozPT1IrIyRLGrTjdPjJqsYaU=";
   };
 
   outputs = [ "out" "dev" ];
@@ -26,6 +33,10 @@ stdenv.mkDerivation rec {
     "PREFIX=$(out)"
   ];
 
+  preBuild = ''
+    makeFlagsArray+=(NVCC_GENCODE="${nvcc_gencode}")
+  '';
+
   postFixup = ''
     moveToOutput lib/libnccl_static.a $dev
 
@@ -39,7 +50,7 @@ stdenv.mkDerivation rec {
   enableParallelBuilding = true;
 
   passthru = {
-    inherit cudatoolkit;
+    inherit cudaPackages;
   };
 
   meta = with lib; {
