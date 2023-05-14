@@ -1,0 +1,1220 @@
+{
+    "AppleFileSystemDriver": {
+        "hash": "sha256-vPLbRRn3EdZRRO5ZA1VhjBMRXp0Xfp5KjNfsL0Qzzgc=",
+        "owner": "apple-oss-distributions",
+        "repo": "AppleFileSystemDriver",
+        "rev": "AppleFileSystemDriver-21"
+    },
+    "AppleRAID": {
+        "hash": "sha256-xOwQTFap/DXeAvPkdkdtbHRSq+4ttO369wP4itkt9Cg=",
+        "owner": "apple-oss-distributions",
+        "repo": "AppleRAID",
+        "rev": "AppleRAID-8.50.1"
+    },
+    "AppleUSBIrDA": {
+        "hash": "sha256-eBJMohWpyS+tX03n9lDV9b60VvVleiXxuQ7MAdn8BIY=",
+        "owner": "apple-oss-distributions",
+        "repo": "AppleUSBIrDA",
+        "rev": "AppleUSBIrDA-145.2.4"
+    },
+    "AvailabilityVersions": {
+        "hash": "sha256-/BhzS77AVVVun761Pho2r5lPo6+y4LwE32CCeO6bd6I=",
+        "owner": "apple-oss-distributions",
+        "repo": "AvailabilityVersions",
+        "rev": "AvailabilityVersions-26.50.4"
+    },
+    "BerkeleyDB": {
+        "hash": "sha256-s//NMx9j32gJ22XhHbXg2lmCFZvdBmqToocD6r6LDjY=",
+        "owner": "apple-oss-distributions",
+        "repo": "BerkeleyDB",
+        "rev": "BerkeleyDB-21"
+    },
+    "BootCache": {
+        "hash": "sha256-YkVrrfpbChIwGV0vGoF5ic5PkBopkFBIS2NOzRXtWtE=",
+        "owner": "apple-oss-distributions",
+        "repo": "BootCache",
+        "rev": "BootCache-118"
+    },
+    "CPAN": {
+        "hash": "sha256-dMwolJ9MtGGr7POtCCuWJEhpLCPNjvp+uyCb2ewHkLo=",
+        "owner": "apple-oss-distributions",
+        "repo": "CPAN",
+        "rev": "CPAN-58"
+    },
+    "CPANInternal": {
+        "hash": "sha256-cAwYR3NAM32vWwFVk161R0q0/WPRASkTusksGLIL1M8=",
+        "owner": "apple-oss-distributions",
+        "repo": "CPANInternal",
+        "rev": "CPANInternal-162"
+    },
+    "Chess": {
+        "hash": "sha256-toDkLCguBqAs2Vm1y0mzohMUfEWe72iDPGwTsDx+Id0=",
+        "owner": "apple-oss-distributions",
+        "repo": "Chess",
+        "rev": "Chess-319"
+    },
+    "CommonCrypto": {
+        "hash": "sha256-BsfOjiEMhRtfCvTFrGDCHvhOfta1qWpK7sLvG72G5Ug=",
+        "owner": "apple-oss-distributions",
+        "repo": "CommonCrypto",
+        "rev": "CommonCrypto-60092.50.5"
+    },
+    "CrackLib": {
+        "hash": "sha256-W1qLZAIqtb4jSFmstFPa5XfcBWXrv6duTTue9CsQEv4=",
+        "owner": "apple-oss-distributions",
+        "repo": "CrackLib",
+        "rev": "CrackLib-37765"
+    },
+    "Csu": {
+        "hash": "sha256-dqqEhphM/SXQH6VxQyz5D3DxqJZAZtZ5O8YWJiaqhNw=",
+        "owner": "apple-oss-distributions",
+        "repo": "Csu",
+        "rev": "Csu-85"
+    },
+    "DiskArbitration": {
+        "hash": "sha256-yp9t9kOj1NxxPnwKu4X/dZqctbwzZcGFieFSU5uqdO4=",
+        "owner": "apple-oss-distributions",
+        "repo": "DiskArbitration",
+        "rev": "DiskArbitration-288.60.1"
+    },
+    "Heimdal": {
+        "hash": "sha256-uIO0/SVrnHv7Ue2gUK6UiZWGQekCYTY+BLkWM/HskfU=",
+        "owner": "apple-oss-distributions",
+        "repo": "Heimdal",
+        "rev": "Heimdal-498.50.8"
+    },
+    "ICU": {
+        "hash": "sha256-INL8kj8HNvzKltJ5mHKO4sZba96DkRXYPRG5M/Hkh8k=",
+        "owner": "apple-oss-distributions",
+        "repo": "ICU",
+        "rev": "ICU-57165.0.1"
+    },
+    "IOATAFamily": {
+        "hash": "sha256-6eDCbEJN1OA1/M1xa64wR2oPFsnT0XJ7d52pQkOTUqs=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOATAFamily",
+        "rev": "IOATAFamily-254.50.1"
+    },
+    "IOATAPIProtocolTransport": {
+        "hash": "sha256-3rFyEl/w4wHLfFk2bpubcq4CkXQgK8T/LNheYBuw/5U=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOATAPIProtocolTransport",
+        "rev": "IOATAPIProtocolTransport-350.0.3"
+    },
+    "IOAudioFamily": {
+        "hash": "sha256-rlVZAhm8GxjHm/tGNhJdBDjEMqPQIxiIUmxYREqvNcE=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOAudioFamily",
+        "rev": "IOAudioFamily-205.15"
+    },
+    "IOBDStorageFamily": {
+        "hash": "sha256-4NpWcqfkp3UxhKKAwomDK3zxQ9DagyYFUVoUcrHo1Rg=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOBDStorageFamily",
+        "rev": "IOBDStorageFamily-18"
+    },
+    "IOCDStorageFamily": {
+        "hash": "sha256-XOwdBFunLbwyasnTKQC6MRlXxGns07JvcAQc6AQ1Zt4=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOCDStorageFamily",
+        "rev": "IOCDStorageFamily-56"
+    },
+    "IODVDStorageFamily": {
+        "hash": "sha256-bbGzqJnenEL9hRyKMBif/381/ETO+yNYHhlnXXWLne0=",
+        "owner": "apple-oss-distributions",
+        "repo": "IODVDStorageFamily",
+        "rev": "IODVDStorageFamily-41.1"
+    },
+    "IOFWDVComponents": {
+        "hash": "sha256-WkfkWnzRupEh20U7vjsTta89clhus6GTkOpXQWXw/bM=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOFWDVComponents",
+        "rev": "IOFWDVComponents-208"
+    },
+    "IOFireWireAVC": {
+        "hash": "sha256-4JS+oezknezxud2E2ojYdSx7A8Z9Q4rddetAoUMU1es=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOFireWireAVC",
+        "rev": "IOFireWireAVC-425"
+    },
+    "IOFireWireFamily": {
+        "hash": "sha256-0+CjM51mDsIEnvH/e6ycS7x70X2NDGzrfsUnd4ut5i0=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOFireWireFamily",
+        "rev": "IOFireWireFamily-466"
+    },
+    "IOFireWireIP": {
+        "hash": "sha256-KytjpgvxAXNS09IDzvE1oooh+5ke41+qhYYtZ/ngLhc=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOFireWireIP",
+        "rev": "IOFireWireIP-227"
+    },
+    "IOFireWireSBP2": {
+        "hash": "sha256-5UWldDuSyAnRYjgIKllY4VNbxtAUawrlRS46+8FnbPs=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOFireWireSBP2",
+        "rev": "IOFireWireSBP2-427"
+    },
+    "IOFireWireSerialBusProtocolTransport": {
+        "hash": "sha256-a/xnnR2dUSWVMyTlkxJPa7cWk20RHl0Zh2Ot2pSEkF0=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOFireWireSerialBusProtocolTransport",
+        "rev": "IOFireWireSerialBusProtocolTransport-252"
+    },
+    "IOGraphics": {
+        "hash": "sha256-zv0iYccrEo0DrFF3c6lunXmvZqwJ+bDiDPY/XHvetzM=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOGraphics",
+        "rev": "IOGraphics-515.3"
+    },
+    "IOHIDFamily": {
+        "hash": "sha256-4c8PZg/rNljIfm35nVBNZMFjMrif26MYNpgRT5R2bxE=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOHIDFamily",
+        "rev": "IOHIDFamily-870.60.4"
+    },
+    "IOKitTools": {
+        "hash": "sha256-rBxqj49fr2f1nXC9jQljTKFio+WkunJnjt8fcFMpgN8=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOKitTools",
+        "rev": "IOKitTools-105"
+    },
+    "IOKitUser": {
+        "hash": "sha256-PJO42dKYJ/DGycgOgVB00NAq6I6pWFOBmab7hnidFlk=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOKitUser",
+        "rev": "IOKitUser-1324.60.3"
+    },
+    "IONetworkingFamily": {
+        "hash": "sha256-dL1wSu72uzAAoMdgSjitXgHviioVIGdkDXqwY6HT5/g=",
+        "owner": "apple-oss-distributions",
+        "repo": "IONetworkingFamily",
+        "rev": "IONetworkingFamily-116.1.1"
+    },
+    "IOPCIFamily": {
+        "hash": "sha256-FB5wrhNck4XnGCMv2vNyArNMvEp0Cw5qd3svOFnjFMg=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOPCIFamily",
+        "rev": "IOPCIFamily-306.50.1"
+    },
+    "IOSCSIParallelFamily": {
+        "hash": "sha256-gevEeTF0L3AK/UIBcgTyaY1UhWiDCT5Q3D+EPIGDN0w=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOSCSIParallelFamily",
+        "rev": "IOSCSIParallelFamily-300.0.2"
+    },
+    "IOSerialFamily": {
+        "hash": "sha256-ZcZ5F+a4u2AHThO5WyLn3/o42DR+YDBZKTy4P2EhHhk=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOSerialFamily",
+        "rev": "IOSerialFamily-91"
+    },
+    "IOStorageFamily": {
+        "hash": "sha256-IjsG/lgdtW04WH/5rb1QAT563Oy4O5fUrTGuA1kBrkY=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOStorageFamily",
+        "rev": "IOStorageFamily-210.30.1"
+    },
+    "IOUSBMassStorageClass": {
+        "hash": "sha256-XI7HQ2dSW6yEgbMANh/y5xNb0Tb07YFMFG9q9AMBKEQ=",
+        "owner": "apple-oss-distributions",
+        "repo": "IOUSBMassStorageClass",
+        "rev": "IOUSBMassStorageClass-406.60.1"
+    },
+    "JavaScriptCore": {
+        "hash": "sha256-y3QQtccBOqoM7Lo35+rs6+QfZetKshPMqqWrKyvQCvo=",
+        "owner": "apple-oss-distributions",
+        "repo": "JavaScriptCore",
+        "rev": "JavaScriptCore-7603.2.4"
+    },
+    "KerberosHelper": {
+        "hash": "sha256-RYWEYJWo9BZCNuaHWlU5ITYgZm/Vjfure6aZH86Ir8o=",
+        "owner": "apple-oss-distributions",
+        "repo": "KerberosHelper",
+        "rev": "KerberosHelper-154"
+    },
+    "Libc": {
+        "hash": "sha256-n2eMRb2l9G4CHAcfg+ycAfMrUNeBNXB3Cv6c1gGoqu8=",
+        "owner": "apple-oss-distributions",
+        "repo": "Libc",
+        "rev": "Libc-1158.50.2"
+    },
+    "Libinfo": {
+        "hash": "sha256-b39EqcCalwzUP3P2q/zT69VnfsAqbQAGtBZd6sH6K/M=",
+        "owner": "apple-oss-distributions",
+        "repo": "Libinfo",
+        "rev": "Libinfo-503.50.4"
+    },
+    "Libnotify": {
+        "hash": "sha256-msGtbR53SHXjYN8i74gmkYWGkmqg+TcRO7TY/23XSFQ=",
+        "owner": "apple-oss-distributions",
+        "repo": "Libnotify",
+        "rev": "Libnotify-165.20.1"
+    },
+    "Librpcsvc": {
+        "hash": "sha256-8e8E9TkRTAep3/miyqhF/mSkNdlym12W+AVhXF94+Bg=",
+        "owner": "apple-oss-distributions",
+        "repo": "Librpcsvc",
+        "rev": "Librpcsvc-26"
+    },
+    "Libsystem": {
+        "hash": "sha256-ydUtP3ywPrSP8Dr2O8JczQN5oapA97r30N/4mjYmAF4=",
+        "owner": "apple-oss-distributions",
+        "repo": "Libsystem",
+        "rev": "Libsystem-1238.60.2"
+    },
+    "Liby": {
+        "hash": "sha256-dvQaAVs68tJfGfaa5a/uxcyE8sIyJzfzX+bL0f2qVGA=",
+        "owner": "apple-oss-distributions",
+        "repo": "Liby",
+        "rev": "Liby-20"
+    },
+    "MITKerberosShim": {
+        "hash": "sha256-YH6vRw4O4pbWybG+gSCKzKvcaMtIEn65zkMfLxHt37U=",
+        "owner": "apple-oss-distributions",
+        "repo": "MITKerberosShim",
+        "rev": "MITKerberosShim-71"
+    },
+    "NFS": {
+        "hash": "sha256-wXwasD4M/j5GSgavbgd+HvOxTIA62GY5lOdvhRPikok=",
+        "owner": "apple-oss-distributions",
+        "repo": "NFS",
+        "rev": "NFS-98"
+    },
+    "OpenAL": {
+        "hash": "sha256-GM1CSc1IcFd0ZMEr65Ac41JOdAO7tFq4s3nljNqRveI=",
+        "owner": "apple-oss-distributions",
+        "repo": "OpenAL",
+        "rev": "OpenAL-60"
+    },
+    "OpenLDAP": {
+        "hash": "sha256-16A8x+5UyNhNTWNgxtJJ6ayiNknFfSxMSsQ6V/8ljXg=",
+        "owner": "apple-oss-distributions",
+        "repo": "OpenLDAP",
+        "rev": "OpenLDAP-523.30.2"
+    },
+    "OpenPAM": {
+        "hash": "sha256-bAb0AS5dKYTczhZZg1mSRc0HHtkwsWeNfQ+jKp6aHxU=",
+        "owner": "apple-oss-distributions",
+        "repo": "OpenPAM",
+        "rev": "OpenPAM-21.30.1"
+    },
+    "OpenSSH": {
+        "hash": "sha256-dyQU3fIQhuq2dpzq+7BbD2RPCwOG+GGAgOWsGpRRWP0=",
+        "owner": "apple-oss-distributions",
+        "repo": "OpenSSH",
+        "rev": "OpenSSH-209.50.1"
+    },
+    "OpenSSL098": {
+        "hash": "sha256-Co6ruPnq4/awUEsuarN4z4sQcg23unfo1DtYG9GjPG0=",
+        "owner": "apple-oss-distributions",
+        "repo": "OpenSSL098",
+        "rev": "OpenSSL098-64.50.6"
+    },
+    "PostgreSQL": {
+        "hash": "sha256-JAOPYh5u5dB/RvNUNnCG0r/w2BmrWdrxrzxQK49e4zY=",
+        "owner": "apple-oss-distributions",
+        "repo": "PostgreSQL",
+        "rev": "PostgreSQL-207.5"
+    },
+    "PowerManagement": {
+        "hash": "sha256-dqG5nT32uvZdgm1kX62wQpP8tB/syD1Wcz1Qie5F3ec=",
+        "owner": "apple-oss-distributions",
+        "repo": "PowerManagement",
+        "rev": "PowerManagement-637.60.1"
+    },
+    "RubyGems": {
+        "hash": "sha256-GEL+IKTeOPdtVi6NMnIcqrayujVFtWs5jMXqNbp5iiY=",
+        "owner": "apple-oss-distributions",
+        "repo": "RubyGems",
+        "rev": "RubyGems-28"
+    },
+    "Security": {
+        "hash": "sha256-/+5OGc/kW1FIuLMrVsTnQDvBExDET8hCBQ55vijAmyU=",
+        "owner": "apple-oss-distributions",
+        "repo": "Security",
+        "rev": "Security-57740.60.18"
+    },
+    "SecurityTokend": {
+        "hash": "sha256-4kPVjMeTHpU5l2dst/4WojdEgRgbkCPt4K+BURi7Fkg=",
+        "owner": "apple-oss-distributions",
+        "repo": "SecurityTokend",
+        "rev": "SecurityTokend-55111"
+    },
+    "SmartcardCCID": {
+        "hash": "sha256-5+H7ESnU6hHzZ3cY4Cae1xuvNAxSBj3bMwTr/jbUqFQ=",
+        "owner": "apple-oss-distributions",
+        "repo": "SmartcardCCID",
+        "rev": "SmartcardCCID-55013.30.1"
+    },
+    "TimeZoneData": {
+        "hash": "sha256-WpXTMp9wF0exfVn6fUD3COeKTL52VOn/i0devcnswYg=",
+        "owner": "apple-oss-distributions",
+        "repo": "TimeZoneData",
+        "rev": "TimeZoneData-84"
+    },
+    "UserNotification": {
+        "hash": "sha256-fJGlNe/qyxfAIzoPBKTzD/nhzZwyuHd2xy7ycUO1J4s=",
+        "owner": "apple-oss-distributions",
+        "repo": "UserNotification",
+        "rev": "UserNotification-29"
+    },
+    "WTF": {
+        "hash": "sha256-oC3GGxPBH4k1vrDSgOz05Pbb+1lXRB0FmLw3VJMPKjg=",
+        "owner": "apple-oss-distributions",
+        "repo": "WTF",
+        "rev": "WTF-7603.2.4"
+    },
+    "WebCore": {
+        "hash": "sha256-mG5GKdPAzPChx3JsUGw/7FTqrtXuHuOzJ++yNZ1F8X8=",
+        "owner": "apple-oss-distributions",
+        "repo": "WebCore",
+        "rev": "WebCore-7603.2.4"
+    },
+    "WebInspectorUI": {
+        "hash": "sha256-TApXw9GJl4ajVF05La7k6dRcZC05BccZtJclytWMJLY=",
+        "owner": "apple-oss-distributions",
+        "repo": "WebInspectorUI",
+        "rev": "WebInspectorUI-7603.2.4"
+    },
+    "WebKit": {
+        "hash": "sha256-KTFfGrvFvnbzV/7TlW7J7CmaGvOwSySLULZWYzyp04U=",
+        "owner": "apple-oss-distributions",
+        "repo": "WebKit",
+        "rev": "WebKit-7603.2.4"
+    },
+    "WebKit2": {
+        "hash": "sha256-I4Tasnhao2TUM5vStoqqgkr3jrm3VNdRqiPVyrde64g=",
+        "owner": "apple-oss-distributions",
+        "repo": "WebKit2",
+        "rev": "WebKit2-7603.2.4"
+    },
+    "adv_cmds": {
+        "hash": "sha256-jpueJKH+kRij92cmTzrUMroGTq3FHZrNfLfchSPx1IE=",
+        "owner": "apple-oss-distributions",
+        "repo": "adv_cmds",
+        "rev": "adv_cmds-168"
+    },
+    "apache": {
+        "hash": "sha256-VZvenEHhqHNPxdoXRiORlTFP54OwOyXHgvN/3eaZ9xE=",
+        "owner": "apple-oss-distributions",
+        "repo": "apache",
+        "rev": "apache-812.2"
+    },
+    "apache_mod_hfs_apple": {
+        "hash": "sha256-FmVH+xY36pKXPU+1xP27Uj30mKWaKWu7o7YKE8NO/Sg=",
+        "owner": "apple-oss-distributions",
+        "repo": "apache_mod_hfs_apple",
+        "rev": "apache_mod_hfs_apple-15"
+    },
+    "apache_mod_perl": {
+        "hash": "sha256-+/JxNRg8tHT1GEp0D6whxD4aD+IscAEgQoOY+A2CwZM=",
+        "owner": "apple-oss-distributions",
+        "repo": "apache_mod_perl",
+        "rev": "apache_mod_perl-109"
+    },
+    "apache_mod_php": {
+        "hash": "sha256-LoSLBq0t9nMKYNibQpqTgIi0w+XRGXrytu9bTOjqHmk=",
+        "owner": "apple-oss-distributions",
+        "repo": "apache_mod_php",
+        "rev": "apache_mod_php-117.2"
+    },
+    "apr": {
+        "hash": "sha256-bxpr1Aijp/bASnzDggLRAHVWZoPSwQpJxLYV3k6YHlw=",
+        "owner": "apple-oss-distributions",
+        "repo": "apr",
+        "rev": "apr-39"
+    },
+    "architecture": {
+        "hash": "sha256-gHUfKWc1uahI/IATafY1ppPAWnYUghOEXWK2lknAfrQ=",
+        "owner": "apple-oss-distributions",
+        "repo": "architecture",
+        "rev": "architecture-268"
+    },
+    "autofs": {
+        "hash": "sha256-tPOwH0nRHNYAhGJUijiQ3MWl5wYqshIBbxZG1IXDXMo=",
+        "owner": "apple-oss-distributions",
+        "repo": "autofs",
+        "rev": "autofs-259.30.2"
+    },
+    "awk": {
+        "hash": "sha256-ivbPusFQI5RRU0RBjc6JNbYrFycA+Q90bx/lUDXfPJA=",
+        "owner": "apple-oss-distributions",
+        "repo": "awk",
+        "rev": "awk-23.30.1"
+    },
+    "bash": {
+        "hash": "sha256-C/an4zM+V7+VlPMXcJw3LaIB0oLqNvpq3Mn+yScbpQA=",
+        "owner": "apple-oss-distributions",
+        "repo": "bash",
+        "rev": "bash-103.50.1"
+    },
+    "basic_cmds": {
+        "hash": "sha256-1Xkuhvt5nEwTd3gGGLbw471fvyk4N+uht9Y7CKH5B7c=",
+        "owner": "apple-oss-distributions",
+        "repo": "basic_cmds",
+        "rev": "basic_cmds-55"
+    },
+    "bc": {
+        "hash": "sha256-xUgPHEIvfwrqJVkR4vctzRcGbeF9/kv1cBtuIYE7E5c=",
+        "owner": "apple-oss-distributions",
+        "repo": "bc",
+        "rev": "bc-21"
+    },
+    "bind9": {
+        "hash": "sha256-VjjWf7ndGV9eKXtaW+np7K24aQZxe/Bl3ikGX5n2PB0=",
+        "owner": "apple-oss-distributions",
+        "repo": "bind9",
+        "rev": "bind9-45.101"
+    },
+    "bless": {
+        "hash": "sha256-lX72ZsSxniw7nbeLSg8nuGiqqs5ExLpgPMzyBTu9638=",
+        "owner": "apple-oss-distributions",
+        "repo": "bless",
+        "rev": "bless-134"
+    },
+    "bmalloc": {
+        "hash": "sha256-11w4v/5tMn8JwYxXln58aJJ+4i00ZDRdU7DtJwuEWvo=",
+        "owner": "apple-oss-distributions",
+        "repo": "bmalloc",
+        "rev": "bmalloc-7603.2.4"
+    },
+    "bootp": {
+        "hash": "sha256-aVkYoMn2xK9phNAsBuokg2bH2cCOQ04ld48NQBLupk8=",
+        "owner": "apple-oss-distributions",
+        "repo": "bootp",
+        "rev": "bootp-343.50.1"
+    },
+    "bootstrap_cmds": {
+        "hash": "sha256-MIOSUAvzB442aIFOLSE+DOf6eiQLxGSFyZhu8FGV9Mw=",
+        "owner": "apple-oss-distributions",
+        "repo": "bootstrap_cmds",
+        "rev": "bootstrap_cmds-96.20.2"
+    },
+    "bzip2": {
+        "hash": "sha256-EEv2pIGoEiS9hxdtI9Z8Lvlt+/bkACsX3ug3L0Obb4U=",
+        "owner": "apple-oss-distributions",
+        "repo": "bzip2",
+        "rev": "bzip2-38"
+    },
+    "cddafs": {
+        "hash": "sha256-Abrs5MJxPrxNZcuIyB39TZddKmIaOkaLWWLmWxZHso4=",
+        "owner": "apple-oss-distributions",
+        "repo": "cddafs",
+        "rev": "cddafs-263"
+    },
+    "configd": {
+        "hash": "sha256-6GXSvb0uX4iSJQx3cSIGQYLFWtNetj0c1ww4U+KtaDw=",
+        "owner": "apple-oss-distributions",
+        "repo": "configd",
+        "rev": "configd-888.60.2"
+    },
+    "copyfile": {
+        "hash": "sha256-pth+37uTfuFY94HuA4b/5GleDjidAuXVsBEQBUa3xCE=",
+        "owner": "apple-oss-distributions",
+        "repo": "copyfile",
+        "rev": "copyfile-138"
+    },
+    "coreTLS": {
+        "hash": "sha256-Gy5F1eMaQcgo7YKXPir2dyoDCqUKjeiucbgF4tfRKuY=",
+        "owner": "apple-oss-distributions",
+        "repo": "coreTLS",
+        "rev": "coreTLS-121.50.4"
+    },
+    "cron": {
+        "hash": "sha256-G3CY81nLCRqp3/Chi3vUYn3wBPYjmOFcdrQd1qCpoG4=",
+        "owner": "apple-oss-distributions",
+        "repo": "cron",
+        "rev": "cron-39"
+    },
+    "crontabs": {
+        "hash": "sha256-5dTtSSaOKI5uY68Wi2tn68auO5WI4iHo7HQefEoGt88=",
+        "owner": "apple-oss-distributions",
+        "repo": "crontabs",
+        "rev": "crontabs-52"
+    },
+    "cups": {
+        "hash": "sha256-SHJsOapt2RLVgARItrdOefEBCyIAek3/RKKd9imm9F4=",
+        "owner": "apple-oss-distributions",
+        "repo": "cups",
+        "rev": "cups-450"
+    },
+    "curl": {
+        "hash": "sha256-tzPoyj/755oAOX1SIlWJSfPm85vmAEPBZrj/O1md/4g=",
+        "owner": "apple-oss-distributions",
+        "repo": "curl",
+        "rev": "curl-95.50.2"
+    },
+    "cxxfilt": {
+        "hash": "sha256-b4PgWNG9FelKZexcbKGTngtRy+0KvnxSwAP/aQl4yOk=",
+        "owner": "apple-oss-distributions",
+        "repo": "cxxfilt",
+        "rev": "cxxfilt-11.2"
+    },
+    "dcerpc": {
+        "hash": "sha256-4XBqsDj8yXYg2+ajSpubcdk6sTC5qysLu87iFbnBgNI=",
+        "owner": "apple-oss-distributions",
+        "repo": "dcerpc",
+        "rev": "dcerpc-63"
+    },
+    "diskdev_cmds": {
+        "hash": "sha256-NIbKhrvf6Gp+L/KDBOcnKFpSgoK3pReaffnVWw3Vsic=",
+        "owner": "apple-oss-distributions",
+        "repo": "diskdev_cmds",
+        "rev": "diskdev_cmds-589"
+    },
+    "disklabel": {
+        "hash": "sha256-DMqpOEVwO50EhEg1pCJA0cfAwtZKAWkRcrPtm87cdkI=",
+        "owner": "apple-oss-distributions",
+        "repo": "disklabel",
+        "rev": "disklabel-6"
+    },
+    "doc_cmds": {
+        "hash": "sha256-eQbssRNVeZlIyMWBE+RZYxbk9t2dXVDWfGPE6u3ydAE=",
+        "owner": "apple-oss-distributions",
+        "repo": "doc_cmds",
+        "rev": "doc_cmds-51"
+    },
+    "dtrace": {
+        "hash": "sha256-faxsE1HB6iBJ6JlhYjf27//xADuUfqjQqK8qGTyI2lc=",
+        "owner": "apple-oss-distributions",
+        "repo": "dtrace",
+        "rev": "dtrace-209.50.12"
+    },
+    "dyld": {
+        "hash": "sha256-NSlltdYav11PlFmTznB24IDFvQExcBNFuQweKt1i3no=",
+        "owner": "apple-oss-distributions",
+        "repo": "dyld",
+        "rev": "dyld-433.5"
+    },
+    "eap8021x": {
+        "hash": "sha256-gcNt8TiSPc79SoRIgNxJy6GVsRxt1rlkM1gbpMgfG1M=",
+        "owner": "apple-oss-distributions",
+        "repo": "eap8021x",
+        "rev": "eap8021x-246.60.2"
+    },
+    "emacs": {
+        "hash": "sha256-66ZCJYp4pHN5m6kkOLZjaehPj5xW2QOfd3co+1cc3I8=",
+        "owner": "apple-oss-distributions",
+        "repo": "emacs",
+        "rev": "emacs-95"
+    },
+    "expat": {
+        "hash": "sha256-UOrApqb7ITHI6bJFKKrzMS/vjesTg1Oe3pTjmpaO0Sw=",
+        "owner": "apple-oss-distributions",
+        "repo": "expat",
+        "rev": "expat-15"
+    },
+    "file": {
+        "hash": "sha256-NxoCz0DR7dA9QJBRSrgl9LMZ/IJUullnWHlz+MtLn+o=",
+        "owner": "apple-oss-distributions",
+        "repo": "file",
+        "rev": "file-54"
+    },
+    "file_cmds": {
+        "hash": "sha256-2phKzjUwxPDqHZ1D9Ce7QAPUPfxGUyOYxzSKKo1G9Io=",
+        "owner": "apple-oss-distributions",
+        "repo": "file_cmds",
+        "rev": "file_cmds-264.50.1"
+    },
+    "files": {
+        "hash": "sha256-6NS5VOq+21m6x8p7PzCDWgoho+vE/Wy0xO6EdzwXuKo=",
+        "owner": "apple-oss-distributions",
+        "repo": "files",
+        "rev": "files-719.50.1"
+    },
+    "gnudiff": {
+        "hash": "sha256-H/XNTHfbmWgya8dpmOM7az6q3z+FPaBTu8jAIc2ySFs=",
+        "owner": "apple-oss-distributions",
+        "repo": "gnudiff",
+        "rev": "gnudiff-21"
+    },
+    "gnuserv": {
+        "hash": "sha256-47Ge6a1PbSMxpZkU8lzH2t0LMuolkVgSp3VRv4R+Ayg=",
+        "owner": "apple-oss-distributions",
+        "repo": "gnuserv",
+        "rev": "gnuserv-7"
+    },
+    "gnutar": {
+        "hash": "sha256-ynciIoREa4ToQVCuDQd0vpmP8Kfu0r/c7Cdhubfr6bM=",
+        "owner": "apple-oss-distributions",
+        "repo": "gnutar",
+        "rev": "gnutar-454"
+    },
+    "gpatch": {
+        "hash": "sha256-BQEN04UT/mX+ycLwjdPcr4xLwu5dbkDvKKM2pJcA7Yg=",
+        "owner": "apple-oss-distributions",
+        "repo": "gpatch",
+        "rev": "gpatch-3"
+    },
+    "gpt": {
+        "hash": "sha256-i+4ZUbKUFSo2TgktKTk2oBErQbx7jKONJpmQRMfom4E=",
+        "owner": "apple-oss-distributions",
+        "repo": "gpt",
+        "rev": "gpt-18"
+    },
+    "groff": {
+        "hash": "sha256-/6iLtBBCt7Yw/rgmoAgtWIFTdUlhR9RQjsMIMElgpe8=",
+        "owner": "apple-oss-distributions",
+        "repo": "groff",
+        "rev": "groff-40"
+    },
+    "gssd": {
+        "hash": "sha256-EzRr5rvyyo+oPUYagqLeO1cDVyxUMFsLhQqE3Cln8Pg=",
+        "owner": "apple-oss-distributions",
+        "repo": "gssd",
+        "rev": "gssd-73.50.1"
+    },
+    "hfs": {
+        "hash": "sha256-zn0WsJa+vVAQoVFIQUwd+tQISAcHmQxUefLT8AwHGAc=",
+        "owner": "apple-oss-distributions",
+        "repo": "hfs",
+        "rev": "hfs-366.50.19"
+    },
+    "hunspell": {
+        "hash": "sha256-qTmGMMkN/gyFWCZLR82vDlVt2OKWy7zytQrjUt7T9Pc=",
+        "owner": "apple-oss-distributions",
+        "repo": "hunspell",
+        "rev": "hunspell-10"
+    },
+    "iodbc": {
+        "hash": "sha256-JhDTWoiDADDXS7jFJneb5KJs0hzPa8O68p3pxQaY3ME=",
+        "owner": "apple-oss-distributions",
+        "repo": "iodbc",
+        "rev": "iodbc-42.5"
+    },
+    "ipsec": {
+        "hash": "sha256-2IVFIVEdguPdTg17cwvAoc8fIZv6ZAS0OMzD2fupew8=",
+        "owner": "apple-oss-distributions",
+        "repo": "ipsec",
+        "rev": "ipsec-305.20.1"
+    },
+    "kext_tools": {
+        "hash": "sha256-1mjg/AM6vXXjk8ONTpR/gcwnBVAWzydVPTTs85hXZJg=",
+        "owner": "apple-oss-distributions",
+        "repo": "kext_tools",
+        "rev": "kext_tools-460.61.1"
+    },
+    "keymgr": {
+        "hash": "sha256-RYTr4SdOwDEiSJKJkqsTa7DEaA0l4yrXZE3GI+iST+U=",
+        "owner": "apple-oss-distributions",
+        "repo": "keymgr",
+        "rev": "keymgr-28"
+    },
+    "ksh": {
+        "hash": "sha256-goXnv7/uvp2cUqBn72JpFRFIQ6kjbhHDRNMaHaIwvJA=",
+        "owner": "apple-oss-distributions",
+        "repo": "ksh",
+        "rev": "ksh-23"
+    },
+    "less": {
+        "hash": "sha256-LE82rHPGl+Nlkifugbm5G2W8Za7+J2pcA5P38X2gyKw=",
+        "owner": "apple-oss-distributions",
+        "repo": "less",
+        "rev": "less-29"
+    },
+    "libarchive": {
+        "hash": "sha256-O3KWLoqXbRVZyvUqd8ttm9yQ1zlFu2ypRFSD1kp7bf8=",
+        "owner": "apple-oss-distributions",
+        "repo": "libarchive",
+        "rev": "libarchive-41.50.2"
+    },
+    "libauto": {
+        "hash": "sha256-XW8b6vHZGUM49YWmELVNDKk1JtZFXTgfkNKy0sUoAoM=",
+        "owner": "apple-oss-distributions",
+        "repo": "libauto",
+        "rev": "libauto-187"
+    },
+    "libclosure": {
+        "hash": "sha256-hfXKQDRdgEDVyT+3v/EuQZyXNd0abD2tICYdQNfhtwY=",
+        "owner": "apple-oss-distributions",
+        "repo": "libclosure",
+        "rev": "libclosure-67"
+    },
+    "libdispatch": {
+        "hash": "sha256-QluJT9hRDnzTNqGUbQA1ELwJv/GDXQ+asELERpmaFnY=",
+        "owner": "apple-oss-distributions",
+        "repo": "libdispatch",
+        "rev": "libdispatch-703.50.37"
+    },
+    "libedit": {
+        "hash": "sha256-0E7A3539aK927l0fwKkVYEy8iC4NPsT5wq1BaBkB6As=",
+        "owner": "apple-oss-distributions",
+        "repo": "libedit",
+        "rev": "libedit-48.50.1"
+    },
+    "libevent": {
+        "hash": "sha256-5PbHicMiy2Ag+hI/ZDxmZki+4/pEP7bKqFv0x2siW38=",
+        "owner": "apple-oss-distributions",
+        "repo": "libevent",
+        "rev": "libevent-7"
+    },
+    "libffi": {
+        "hash": "sha256-SXDID3gh1bWWvC9Sk3CZmRnL7dfwxWXynVN7gSbn1i8=",
+        "owner": "apple-oss-distributions",
+        "repo": "libffi",
+        "rev": "libffi-18.1"
+    },
+    "libfs": {
+        "hash": "sha256-Th+fKAmRLbgiH8Vca2TYbQQcx5Ppqsa+/NdTV6em8Oo=",
+        "owner": "apple-oss-distributions",
+        "repo": "libfs",
+        "rev": "libfs-13"
+    },
+    "libgcc": {
+        "hash": "sha256-yyN7AV1Yv1ygVCWQO0cnNaZnjL65iyqyYf6BG60n3xM=",
+        "owner": "apple-oss-distributions",
+        "repo": "libgcc",
+        "rev": "libgcc-14.1"
+    },
+    "libiconv": {
+        "hash": "sha256-waTlr3+GUxwheGcvrnQDOU41V1HFHnUWwOeSXYsMjdQ=",
+        "owner": "apple-oss-distributions",
+        "repo": "libiconv",
+        "rev": "libiconv-50"
+    },
+    "libmalloc": {
+        "hash": "sha256-I9yQNZxyQK5bunTBkeC7XwpoyCpHk65AZl8OweuYgrQ=",
+        "owner": "apple-oss-distributions",
+        "repo": "libmalloc",
+        "rev": "libmalloc-116.50.8"
+    },
+    "libplatform": {
+        "hash": "sha256-ioX7sIqrksw/5j4kTIoZJnnxYu8fr46CaopZ+wcG57g=",
+        "owner": "apple-oss-distributions",
+        "repo": "libplatform",
+        "rev": "libplatform-126.50.8"
+    },
+    "libpthread": {
+        "hash": "sha256-D/1OCMpKITuuT0jpAgHlXUlTLza58cn2F7pAJM9gBww=",
+        "owner": "apple-oss-distributions",
+        "repo": "libpthread",
+        "rev": "libpthread-218.60.3"
+    },
+    "libresolv": {
+        "hash": "sha256-s09whrOtRlekIQoEukc0JJwYEd8FAB2+fWUAwBi+0Jw=",
+        "owner": "apple-oss-distributions",
+        "repo": "libresolv",
+        "rev": "libresolv-64"
+    },
+    "libsecurity_ldap_dl": {
+        "hash": "sha256-K/b26Ih8Zsb1QUi0luj9xgxHRwp++mtPOyaX9DZgFyE=",
+        "owner": "apple-oss-distributions",
+        "repo": "libsecurity_ldap_dl",
+        "rev": "libsecurity_ldap_dl-55003"
+    },
+    "libstdcxx": {
+        "hash": "sha256-CQaTuj1skJGlwym6Kr+NbZx1au2KRpTGFuHYuHlSVa4=",
+        "owner": "apple-oss-distributions",
+        "repo": "libstdcxx",
+        "rev": "libstdcxx-104.1"
+    },
+    "libtelnet": {
+        "hash": "sha256-D7TCsTdaS8IFedA5tKiZi1RsGN0Uv51cXZ1DxNOPIcE=",
+        "owner": "apple-oss-distributions",
+        "repo": "libtelnet",
+        "rev": "libtelnet-13"
+    },
+    "libunwind": {
+        "hash": "sha256-mQE4NwBpe+lOaaKG+3BYt8QmlfaqWC4xS6Uuz7ZsgAU=",
+        "owner": "apple-oss-distributions",
+        "repo": "libunwind",
+        "rev": "libunwind-35.3"
+    },
+    "libutil": {
+        "hash": "sha256-HOgldZlv57WPxpAiaVG4Pl9FYvi1jd99fxSFVcrwXvw=",
+        "owner": "apple-oss-distributions",
+        "repo": "libutil",
+        "rev": "libutil-47.30.1"
+    },
+    "libxml2": {
+        "hash": "sha256-Zk9w+K80GVcI5Ehtru/QPuun226wzZPgEJsdaB0z6vg=",
+        "owner": "apple-oss-distributions",
+        "repo": "libxml2",
+        "rev": "libxml2-30.16"
+    },
+    "libxslt": {
+        "hash": "sha256-O1547P1wOLk+Dj8hjFQBksrwb2uZ1JL8VvLhM6gk0fI=",
+        "owner": "apple-oss-distributions",
+        "repo": "libxslt",
+        "rev": "libxslt-15.9"
+    },
+    "llvmCore": {
+        "hash": "sha256-GnV9qfsO3Mj59NO3J644FvTguq5Mb8EqEWyu1/WHM3Y=",
+        "owner": "apple-oss-distributions",
+        "repo": "llvmCore",
+        "rev": "llvmCore-3425.0.36"
+    },
+    "lsof": {
+        "hash": "sha256-uWherAtln5ZcEh+cB0OdwF5SkTpNxLZ7f5ix8SZnP3U=",
+        "owner": "apple-oss-distributions",
+        "repo": "lsof",
+        "rev": "lsof-60"
+    },
+    "lukemftp": {
+        "hash": "sha256-szqLjtSW2vqFfO3y28uRyf8otCFuIGdCrQbsRWggbcE=",
+        "owner": "apple-oss-distributions",
+        "repo": "lukemftp",
+        "rev": "lukemftp-16"
+    },
+    "lukemftpd": {
+        "hash": "sha256-MJEbl8HLqj6xHgfKZFmyJeQWxnpQMxtCq7R3WBQoe1I=",
+        "owner": "apple-oss-distributions",
+        "repo": "lukemftpd",
+        "rev": "lukemftpd-51"
+    },
+    "mDNSResponder": {
+        "hash": "sha256-cNv7j5KhA+/yreg3onVugnJuXEVU9UJkFZ6JhQZrqEY=",
+        "owner": "apple-oss-distributions",
+        "repo": "mDNSResponder",
+        "rev": "mDNSResponder-765.50.9"
+    },
+    "mail_cmds": {
+        "hash": "sha256-1cpQ7N20P0/LvRAEILYvPqXhLjgnyurAs/4KdBmwKtY=",
+        "owner": "apple-oss-distributions",
+        "repo": "mail_cmds",
+        "rev": "mail_cmds-33"
+    },
+    "man": {
+        "hash": "sha256-U6RhOrEZGDpxD8qEep/MFGW+kJhkjyNLBK+YY+zl14A=",
+        "owner": "apple-oss-distributions",
+        "repo": "man",
+        "rev": "man-16"
+    },
+    "misc_cmds": {
+        "hash": "sha256-EpVdSKOO2izeOK/iBtpVvRAkzOtx88c3OSqnwTpuv+A=",
+        "owner": "apple-oss-distributions",
+        "repo": "misc_cmds",
+        "rev": "misc_cmds-33"
+    },
+    "modemccl": {
+        "hash": "sha256-w3GsnEObzdYMY8IXhDo4FzcBEAVfrMsDpPttFTl2to4=",
+        "owner": "apple-oss-distributions",
+        "repo": "modemccl",
+        "rev": "modemccl-25.1"
+    },
+    "msdosfs": {
+        "hash": "sha256-a6v2fpzqGoWnBpgXdhVb6lHI1yA/h5935U3YsvKxNG8=",
+        "owner": "apple-oss-distributions",
+        "repo": "msdosfs",
+        "rev": "msdosfs-226.50.1"
+    },
+    "nano": {
+        "hash": "sha256-mWvLo0OrjkDsAz9MRa3STnW1wWU/xKvg2UFEic2DDks=",
+        "owner": "apple-oss-distributions",
+        "repo": "nano",
+        "rev": "nano-12"
+    },
+    "ncurses": {
+        "hash": "sha256-d2AfObaGvOa0pc3RrM39F+MSitOjARoG3ZQ/cjUNnHM=",
+        "owner": "apple-oss-distributions",
+        "repo": "ncurses",
+        "rev": "ncurses-51.30.1"
+    },
+    "net_snmp": {
+        "hash": "sha256-oMzNL3dzUfcHSWOue6ZKgwfCXnpRHhEiRN8uxLt/pTE=",
+        "owner": "apple-oss-distributions",
+        "repo": "net_snmp",
+        "rev": "net_snmp-153"
+    },
+    "netcat": {
+        "hash": "sha256-GUCknamF6uzBCOYI5nElN9CKjrEXiUN/l0r9UZKFLcY=",
+        "owner": "apple-oss-distributions",
+        "repo": "netcat",
+        "rev": "netcat-41"
+    },
+    "network_cmds": {
+        "hash": "sha256-CCrSGgTySl24bYk8w+4DGVFW9OIvJj8FxHZyg4PfmdE=",
+        "owner": "apple-oss-distributions",
+        "repo": "network_cmds",
+        "rev": "network_cmds-511.50.3"
+    },
+    "ntfs": {
+        "hash": "sha256-w/ry5WjRl5Smsnd0Ottd8OplwhNxoNCXljJU1AnY2BE=",
+        "owner": "apple-oss-distributions",
+        "repo": "ntfs",
+        "rev": "ntfs-91.50.2"
+    },
+    "ntp": {
+        "hash": "sha256-AefXAOKFsY41tgPWcFK3ehGx/Sdno64jx4ygAgI/3n4=",
+        "owner": "apple-oss-distributions",
+        "repo": "ntp",
+        "rev": "ntp-124.60.2"
+    },
+    "objc4": {
+        "hash": "sha256-TE4we5nitIOKW10HAhV5+kTjvJmy/A9s2iXOuiPZl/Y=",
+        "owner": "apple-oss-distributions",
+        "repo": "objc4",
+        "rev": "objc4-709"
+    },
+    "pam_modules": {
+        "hash": "sha256-nJ5o61VTuJ2MU0sdgZlYnaSyYKqkjhCOKY8BeVxsTys=",
+        "owner": "apple-oss-distributions",
+        "repo": "pam_modules",
+        "rev": "pam_modules-159.50.4"
+    },
+    "passwordserver_sasl": {
+        "hash": "sha256-wfd1xAO+d1oliOzHhi4mdimC9vz2Qc6JxZqZ9NL9hO8=",
+        "owner": "apple-oss-distributions",
+        "repo": "passwordserver_sasl",
+        "rev": "passwordserver_sasl-209"
+    },
+    "patch_cmds": {
+        "hash": "sha256-dYCu5rhev2FItTN3pFp3KCSl+mtX0VW/8p08RIlcurM=",
+        "owner": "apple-oss-distributions",
+        "repo": "patch_cmds",
+        "rev": "patch_cmds-17"
+    },
+    "pcre": {
+        "hash": "sha256-3edGpxG53DhSDsEDTkzoljGi3fEZG+hVKHcT7CO8nvE=",
+        "owner": "apple-oss-distributions",
+        "repo": "pcre",
+        "rev": "pcre-8"
+    },
+    "pdisk": {
+        "hash": "sha256-+gBgnk/1juEHE0nXaz7laUaH7sxrX5SzsLGr0PHsdHs=",
+        "owner": "apple-oss-distributions",
+        "repo": "pdisk",
+        "rev": "pdisk-9"
+    },
+    "perl": {
+        "hash": "sha256-yMm7uSKCiAbPaFbLvweZFcrTU9N01rWk4lmbRSTlaC0=",
+        "owner": "apple-oss-distributions",
+        "repo": "perl",
+        "rev": "perl-107.50.3"
+    },
+    "postfix": {
+        "hash": "sha256-TEsiJnQ9AczGE3eC0ZYi4Htq+7sw6Plh6RJr5vo3ACw=",
+        "owner": "apple-oss-distributions",
+        "repo": "postfix",
+        "rev": "postfix-265"
+    },
+    "ppp": {
+        "hash": "sha256-o6uKD9Yhrwl0VWxdyUhxmAAM17G3LIokEJtoewo5OS8=",
+        "owner": "apple-oss-distributions",
+        "repo": "ppp",
+        "rev": "ppp-838.50.1"
+    },
+    "pyobjc": {
+        "hash": "sha256-UBTzexCyQ0bm8gXf+JaoL+ibFm4MeSrSBCmeqhguE5Y=",
+        "owner": "apple-oss-distributions",
+        "repo": "pyobjc",
+        "rev": "pyobjc-49"
+    },
+    "python": {
+        "hash": "sha256-NJRQZtpNYiMrebXWWvYWI1q41wAwIto+lX0DfrpMPZg=",
+        "owner": "apple-oss-distributions",
+        "repo": "python",
+        "rev": "python-97.50.7"
+    },
+    "python_modules": {
+        "hash": "sha256-u3UtBSNSmG74lo0zj6U0n7X69Yzl2EqKhLPX/D1rcZ4=",
+        "owner": "apple-oss-distributions",
+        "repo": "python_modules",
+        "rev": "python_modules-43"
+    },
+    "remote_cmds": {
+        "hash": "sha256-kd2fH8/P4VhudzgeXpOPzaTsdReb/qewkulolqXRw3o=",
+        "owner": "apple-oss-distributions",
+        "repo": "remote_cmds",
+        "rev": "remote_cmds-54.50.1"
+    },
+    "removefile": {
+        "hash": "sha256-EJYU6eHggyRsezClEWkGJmgePIdtyF4rpFD4kSK5Czw=",
+        "owner": "apple-oss-distributions",
+        "repo": "removefile",
+        "rev": "removefile-45"
+    },
+    "rsync": {
+        "hash": "sha256-Oecn6Ilf7bOzN69UEjKqeKgaAI0o/HFXfrDwFN/9oeE=",
+        "owner": "apple-oss-distributions",
+        "repo": "rsync",
+        "rev": "rsync-51"
+    },
+    "ruby": {
+        "hash": "sha256-vwNh/m5XBImPAUHoAuIFZFK/nYLAqpfngquDszNDIkA=",
+        "owner": "apple-oss-distributions",
+        "repo": "ruby",
+        "rev": "ruby-119.50.2"
+    },
+    "screen": {
+        "hash": "sha256-fVtFelZfd4kuXNfCdn5r7dsaO7KxoCb20wwxHq4JUGY=",
+        "owner": "apple-oss-distributions",
+        "repo": "screen",
+        "rev": "screen-22"
+    },
+    "security_authtrampoline": {
+        "hash": "sha256-v+FkzANklcpb/EGKgYL/JO0+Uae7bg1dpQ9qxojWI3o=",
+        "owner": "apple-oss-distributions",
+        "repo": "security_authtrampoline",
+        "rev": "security_authtrampoline-55105"
+    },
+    "security_certificates": {
+        "hash": "sha256-7KY7SM+c8LOoz9Og/OycVcYLWOadzQfuiWWDL5ssFSY=",
+        "owner": "apple-oss-distributions",
+        "repo": "security_certificates",
+        "rev": "security_certificates-55070.30.7"
+    },
+    "security_certtool": {
+        "hash": "sha256-rXxXYmiAazFwjEg3bucwMgOHC4/hUAMvfQuWQLPkIOY=",
+        "owner": "apple-oss-distributions",
+        "repo": "security_certtool",
+        "rev": "security_certtool-55113"
+    },
+    "security_crlrefresh": {
+        "hash": "sha256-XICtBwBZxK2ufPnv19dTMoMChWoW3MD5UnEYGQFA79Q=",
+        "owner": "apple-oss-distributions",
+        "repo": "security_crlrefresh",
+        "rev": "security_crlrefresh-55102"
+    },
+    "security_dotmac_tp": {
+        "hash": "sha256-+Ny2NT6IlT5PEzUAQVHPYVkc2PfWTfLNSE3QKKsAuOU=",
+        "owner": "apple-oss-distributions",
+        "repo": "security_dotmac_tp",
+        "rev": "security_dotmac_tp-55107.1"
+    },
+    "security_ocspd": {
+        "hash": "sha256-tGdb7gcSSaMRDtcJAWvXSiOnmttYxLxAfZ/fnR9dUlM=",
+        "owner": "apple-oss-distributions",
+        "repo": "security_ocspd",
+        "rev": "security_ocspd-55134.50.1"
+    },
+    "security_systemkeychain": {
+        "hash": "sha256-E/JpVOG19Fo1O+kFyP6AYK2x42tK0/ts/Xp3c9dA43Y=",
+        "owner": "apple-oss-distributions",
+        "repo": "security_systemkeychain",
+        "rev": "security_systemkeychain-55206"
+    },
+    "shell_cmds": {
+        "hash": "sha256-eHefP8+XZKoRBGfkQBXhGGA08BAwXq6ow3MvFbo8NWI=",
+        "owner": "apple-oss-distributions",
+        "repo": "shell_cmds",
+        "rev": "shell_cmds-198"
+    },
+    "sudo": {
+        "hash": "sha256-EQOsTrtK9ZAyVDDjBpClLZ3yI8C1dt3nsLDS292QntY=",
+        "owner": "apple-oss-distributions",
+        "repo": "sudo",
+        "rev": "sudo-83.50.2"
+    },
+    "swig": {
+        "hash": "sha256-m59fssUs5Ktm3PO+GNHB3DM9ZbCjCduXdkXLGUeNZm4=",
+        "owner": "apple-oss-distributions",
+        "repo": "swig",
+        "rev": "swig-12"
+    },
+    "syslog": {
+        "hash": "sha256-tXLW/TNsluhO1X9Rv3FANyzyOe5TE/hZz0gVo7JGvHA=",
+        "owner": "apple-oss-distributions",
+        "repo": "syslog",
+        "rev": "syslog-349.50.5"
+    },
+    "system_cmds": {
+        "hash": "sha256-JQDFG4Nie1vN68l7t3ErpXk8qjs9MHeJLBqyIeo0taE=",
+        "owner": "apple-oss-distributions",
+        "repo": "system_cmds",
+        "rev": "system_cmds-735.50.6"
+    },
+    "system_config": {
+        "hash": "sha256-d9TCUjP5UFn9OdxtKZAGyUK2xRT4qp/h3hFVx32Fcyc=",
+        "owner": "apple-oss-distributions",
+        "repo": "system_config",
+        "rev": "system_config-55"
+    },
+    "tcl": {
+        "hash": "sha256-+wpcnwT493WivkpMeme3SdENzeNhD85vZJnMaFOSj+4=",
+        "owner": "apple-oss-distributions",
+        "repo": "tcl",
+        "rev": "tcl-112.50.2"
+    },
+    "tcpdump": {
+        "hash": "sha256-+p+GB9B4TZsoSKspbU3mZFW1Elu9Gt4paELtubvm0gQ=",
+        "owner": "apple-oss-distributions",
+        "repo": "tcpdump",
+        "rev": "tcpdump-79.60.1"
+    },
+    "tcsh": {
+        "hash": "sha256-3WCVzp5o2th3GcS+7PwAiUBU0XZTbU2Q2ys+3GigpO0=",
+        "owner": "apple-oss-distributions",
+        "repo": "tcsh",
+        "rev": "tcsh-67"
+    },
+    "texinfo": {
+        "hash": "sha256-5fKEDWfcP88JIYH/oMgGjUgjrOvp92TDTQLtQYx7jBI=",
+        "owner": "apple-oss-distributions",
+        "repo": "texinfo",
+        "rev": "texinfo-18"
+    },
+    "text_cmds": {
+        "hash": "sha256-fJdiN6hVqNCBVbzKAsxw75S3rkHoXlOqT/JcR0ieM8o=",
+        "owner": "apple-oss-distributions",
+        "repo": "text_cmds",
+        "rev": "text_cmds-97"
+    },
+    "tidy": {
+        "hash": "sha256-6WlZ9HJI13Gi5jlk8UUBMS+1UGrmqbUyqSwx3UnIIZQ=",
+        "owner": "apple-oss-distributions",
+        "repo": "tidy",
+        "rev": "tidy-15.18.1"
+    },
+    "top": {
+        "hash": "sha256-kxxM8Y5TZVLPPTc4mAIeWG5V1b/0VuKLCTaMdBfnG1A=",
+        "owner": "apple-oss-distributions",
+        "repo": "top",
+        "rev": "top-108"
+    },
+    "usertemplate": {
+        "hash": "sha256-itids1X2evH87omPFS3ZG5ZXEIMf36P8PFg497MaFN4=",
+        "owner": "apple-oss-distributions",
+        "repo": "usertemplate",
+        "rev": "usertemplate-101"
+    },
+    "uucp": {
+        "hash": "sha256-j829BaoyKmxfE5JONmRXFj8yAscZSuRDNrosIHHCb4Q=",
+        "owner": "apple-oss-distributions",
+        "repo": "uucp",
+        "rev": "uucp-11"
+    },
+    "vim": {
+        "hash": "sha256-eo7tpQUucsv1ORwvBZWzryK/8MSkzwaRLWYNOeXAHlg=",
+        "owner": "apple-oss-distributions",
+        "repo": "vim",
+        "rev": "vim-62.50.1"
+    },
+    "webdavfs": {
+        "hash": "sha256-MgExJh9o//wH5SO9qTxHo23iO3KaKudY3wIHmVMTE3g=",
+        "owner": "apple-oss-distributions",
+        "repo": "webdavfs",
+        "rev": "webdavfs-373.60.2"
+    },
+    "xar": {
+        "hash": "sha256-3KcWxDPOrYZmP5yPfB1/ohFLG+FM/zTaig8087Xlmf0=",
+        "owner": "apple-oss-distributions",
+        "repo": "xar",
+        "rev": "xar-357"
+    },
+    "xnu": {
+        "hash": "sha256-X8Q0Rm/GzBLnmlvenYSA+KHQPl53EeemKhDVWLyR9RQ=",
+        "owner": "apple-oss-distributions",
+        "repo": "xnu",
+        "rev": "xnu-3789.60.24"
+    },
+    "zip": {
+        "hash": "sha256-ckPqMRGfrherNI8GEoSmV0guxTZuHRMnfeSY3hZYAsM=",
+        "owner": "apple-oss-distributions",
+        "repo": "zip",
+        "rev": "zip-16"
+    },
+    "zlib": {
+        "hash": "sha256-qZ6VaX1qDG4J2BNzTD1+HRXn4hIKoaezo4SdHsCnHjA=",
+        "owner": "apple-oss-distributions",
+        "repo": "zlib",
+        "rev": "zlib-67"
+    },
+    "zsh": {
+        "hash": "sha256-Itj1zohVOXIraNSkvadN23GILlEuyaWUQ6hOODEuxoE=",
+        "owner": "apple-oss-distributions",
+        "repo": "zsh",
+        "rev": "zsh-70"
+    }
+}

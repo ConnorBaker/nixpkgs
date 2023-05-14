@@ -1,0 +1,26 @@
+{
+    "bootstrap_cmds": {
+        "hash": "sha256-P8wx4cB9O+wI6EN37a6wMRTRd3z6Zj8ojVDCA7XyvbA=",
+        "owner": "apple-oss-distributions",
+        "repo": "bootstrap_cmds",
+        "rev": "bootstrap_cmds-122"
+    },
+    "cctools": {
+        "hash": "sha256-Fc9Bmx6/ya8+jJuKKFcqB4gTmiV1P+SScKT6CyCXAbc=",
+        "owner": "apple-oss-distributions",
+        "repo": "cctools",
+        "rev": "cctools-986"
+    },
+    "ld64": {
+        "hash": "sha256-hQ/YID9teDTt7M23CkxJWrHxSPJbO3XFnjPTr96jOrw=",
+        "owner": "apple-oss-distributions",
+        "repo": "ld64",
+        "rev": "ld64-711"
+    },
+    "tapi": {
+        "hash": "sha256-wVWu+oUbEgKa4ZlgUfI+1tlJwzRj+Ey/TilXQzZbed4=",
+        "owner": "apple-oss-distributions",
+        "repo": "tapi",
+        "rev": "tapi-1300.0.6.5"
+    }
+}

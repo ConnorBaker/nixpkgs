@@ -1,0 +1,92 @@
+{
+    "CoreOSMakefiles": {
+        "hash": "sha256-R0EPbfibQ6011b6KDvZMh+9R/bTaZykBFFAutog5IF4=",
+        "owner": "apple-oss-distributions",
+        "repo": "CoreOSMakefiles",
+        "rev": "CoreOSMakefiles-79"
+    },
+    "Git": {
+        "hash": "sha256-9F6mrjF1fJm4JpM06NJ7jIAbDPm7RJO9IITCQlmVNCU=",
+        "owner": "apple-oss-distributions",
+        "repo": "Git",
+        "rev": "Git-113"
+    },
+    "bison": {
+        "hash": "sha256-Z46USqQYCpmiyt2jFhN9HiTlzhKwGvS095SWxsYln48=",
+        "owner": "apple-oss-distributions",
+        "repo": "bison",
+        "rev": "bison-14"
+    },
+    "bootstrap_cmds": {
+        "hash": "sha256-ualMpYLR0LhXtYrqbG+hSIS8+dEphMf/wXGTE+K2EGo=",
+        "owner": "apple-oss-distributions",
+        "repo": "bootstrap_cmds",
+        "rev": "bootstrap_cmds-96.20.2.200.4"
+    },
+    "cctools": {
+        "hash": "sha256-nOKhkq/sCHG9dMCanz7SHhl8wqoy3Y6oNIkvZZQhSA0=",
+        "owner": "apple-oss-distributions",
+        "repo": "cctools",
+        "rev": "cctools-921"
+    },
+    "developer_cmds": {
+        "hash": "sha256-VsWkr+rskmvPAo3GtZ/6e6wCzubvsPcBMgj33WdURCY=",
+        "owner": "apple-oss-distributions",
+        "repo": "developer_cmds",
+        "rev": "developer_cmds-66"
+    },
+    "gcc_select": {
+        "hash": "sha256-vHod2pO8S7AaC3OFpawjNTjluZlDjx0eRIddoERWLWI=",
+        "owner": "apple-oss-distributions",
+        "repo": "gcc_select",
+        "rev": "gcc_select-135"
+    },
+    "gm4": {
+        "hash": "sha256-mBEdbxmk1NSdxMPhSyicepHFoLUPXDjuiewb/vYBmzg=",
+        "owner": "apple-oss-distributions",
+        "repo": "gm4",
+        "rev": "gm4-16"
+    },
+    "gnumake": {
+        "hash": "sha256-zK9Y5BQTg/MYkGDp8Gr4Z3u8HfGpwjS85r8lDzfwHVo=",
+        "owner": "apple-oss-distributions",
+        "repo": "gnumake",
+        "rev": "gnumake-131"
+    },
+    "gperf": {
+        "hash": "sha256-URKcEBI3aQdNYLyJyduc2KYUJvb2SVxgqq9BhNx8o2g=",
+        "owner": "apple-oss-distributions",
+        "repo": "gperf",
+        "rev": "gperf-13"
+    },
+    "headerdoc": {
+        "hash": "sha256-lKM/xzgd6xhFhu5XgRKEGp+Ax03VpC9nQSUiyPo3rkA=",
+        "owner": "apple-oss-distributions",
+        "repo": "headerdoc",
+        "rev": "headerdoc-8.9.28"
+    },
+    "ld64": {
+        "hash": "sha256-TUYgKheoGWfwsLvcntgulXoEfXyHZ+THU7+e0GcUthk=",
+        "owner": "apple-oss-distributions",
+        "repo": "ld64",
+        "rev": "ld64-409.12"
+    },
+    "pb_makefiles": {
+        "hash": "sha256-4Mdd65/YF4reDU2RrlleB9N541LO/LaSISI4cSQqTEc=",
+        "owner": "apple-oss-distributions",
+        "repo": "pb_makefiles",
+        "rev": "pb_makefiles-1005"
+    },
+    "subversion": {
+        "hash": "sha256-2Cxme/oIla5qWbKTL28Zb2R78VaY1eoCT4UzkzuAeU4=",
+        "owner": "apple-oss-distributions",
+        "repo": "subversion",
+        "rev": "subversion-81"
+    },
+    "tapi": {
+        "hash": "sha256-QQbULbh/kXskDMYycwQuhycT9qMjZXiTOC4tiuNZAi4=",
+        "owner": "apple-oss-distributions",
+        "repo": "tapi",
+        "rev": "tapi-1000.10.8"
+    }
+}
