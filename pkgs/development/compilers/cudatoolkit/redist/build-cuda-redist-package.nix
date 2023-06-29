@@ -6,6 +6,7 @@
 #
 # General callPackage-supplied arguments
 { lib
+, pkgsTargetTarget
 , stdenv
 , backendStdenv
 , fetchurl
@@ -64,6 +65,7 @@ backendStdenv.mkDerivation {
   # We do need some other phases, like configurePhase, so the multiple-output setup hook works.
   dontBuild = true;
 
+  # depsBuildHost
   nativeBuildInputs = [
     autoPatchelfHook
     # This hook will make sure libcuda can be found
@@ -74,18 +76,14 @@ backendStdenv.mkDerivation {
     markForCudatoolkitRootHook
   ];
 
+  # depsHostTarget
   buildInputs = [
     # autoPatchelfHook will search for a libstdc++ and we're giving it
     # one that is compatible with the rest of nixpkgs, even when
     # nvcc forces us to use an older gcc
     # NB: We don't actually know if this is the right thing to do
-    stdenv.cc.cc.lib
-  ];
-
-  # Picked up by autoPatchelf
-  # Needed e.g. for libnvrtc to locate (dlopen) libnvrtc-builtins
-  appendRunpaths = [
-    "$ORIGIN"
+    # Use pkgsTargetTarget to ensure we're linking against the correct libc for the host.
+    pkgsTargetTarget.stdenv.cc.cc.lib
   ];
 
   installPhase = with releaseFeaturesAttrs;

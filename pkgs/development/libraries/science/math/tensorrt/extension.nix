@@ -24,9 +24,11 @@ final: prev: let
     # Add all supported builds as attributes
     allBuilds = mapAttrs' (version: file: nameValuePair (computeName version) (buildTensorRTPackage (removeAttrs file ["fileVersionCuda"]))) supportedVersions;
     # Set the default attributes, e.g. tensorrt = tensorrt_8_4;
-    defaultBuild = { "tensorrt" = if allBuilds ? ${computeName tensorRTDefaultVersion}
-      then allBuilds.${computeName tensorRTDefaultVersion}
-      else throw "tensorrt-${tensorRTDefaultVersion} does not support your cuda version ${cudaVersion}"; };
+    # Do not set it for unsupported versions of CUDA.
+    defaultBuild =
+      lib.attrsets.optionalAttrs
+      (allBuilds ? ${computeName tensorRTDefaultVersion})
+      { "tensorrt" = allBuilds.${computeName tensorRTDefaultVersion}; };
   in {
     inherit buildTensorRTPackage;
   } // allBuilds // defaultBuild;

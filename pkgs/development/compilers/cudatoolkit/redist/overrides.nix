@@ -1,14 +1,34 @@
 final: prev:
 let
   inherit (prev) lib pkgs;
+  # cudaVersionOlder : Version -> Boolean
   cudaVersionOlder = lib.versionOlder final.cudaVersion;
+  # cudaVersionAtLeast : Version -> Boolean
   cudaVersionAtLeast = lib.versionAtLeast final.cudaVersion;
-in
-(lib.filterAttrs (attr: _: (prev ? "${attr}")) {
-  ### Overrides to fix the components of cudatoolkit-redist
+  # cudaVersionAtMost : Version -> Boolean
+  cudaVersionAtMost = flip versionAtLeast cudaVersion;
+  # cudaVersionBounded : Version -> Version -> Boolean
+  # NOTE: This is inclusive on both ends.
+  cudaVersionBounded = min: max: cudaVersionAtLeast min && cudaVersionAtMost max;
 
-  # Attributes that don't exist in the previous set are removed.
-  # That means only overrides can go here, and not new expressions!
+  inherit (builtins) hasAttr;
+  inherit (final) cudaVersion addBuildInputs addAutoPatchelfIgnoreMissingDeps;
+  inherit (prev.lib.attrsets) filterAttrs optionalAttrs;
+  inherit (prev.lib.lists) optionals;
+  inherit (prev.lib.strings) versionAtLeast;
+  inherit (prev.lib.trivial) flip pipe;
+  inherit (prev.pkgs.stdenv.hostPlatform) isx86_64 isAarch64 isPower64;
+  inherit
+    (prev.pkgs)
+    pkgsBuildHost # for nativeBuildInputs
+    pkgsHostTarget # good ol' pkgs, for buildInputs
+    ;
+in
+  filterAttrs (attr: _: (hasAttr attr prev)) {
+    ### Overrides to fix the components of cudatoolkit-redist
+
+    # Attributes that don't exist in the previous set are removed.
+    # That means only overrides can go here, and not new expressions!
 
   libcufile = prev.libcufile.overrideAttrs (oldAttrs: {
     buildInputs = oldAttrs.buildInputs ++ [
@@ -100,37 +120,22 @@ in
     final.libcurand.lib
   ];
 
-  nsight_compute = prev.nsight_compute.overrideAttrs (oldAttrs: {
-    nativeBuildInputs = oldAttrs.nativeBuildInputs
-    ++ (if (lib.versionOlder prev.nsight_compute.version "2022.2.0")
-       then [ pkgs.qt5.wrapQtAppsHook ]
-       else [ pkgs.qt6.wrapQtAppsHook ]);
-    buildInputs = oldAttrs.buildInputs
-    ++ (if (lib.versionOlder prev.nsight_compute.version "2022.2.0")
-       then [ pkgs.qt5.qtwebview ]
-       else [ pkgs.qt6.qtwebview ]);
-  });
-
-  nsight_systems = prev.nsight_systems.overrideAttrs (oldAttrs: {
-    nativeBuildInputs = oldAttrs.nativeBuildInputs ++ [
-      pkgs.addOpenGLRunpath
-      pkgs.qt5.wrapQtAppsHook
-    ];
-    buildInputs = oldAttrs.buildInputs ++ [
-      pkgs.alsa-lib
-      pkgs.e2fsprogs
-      pkgs.nss
-      pkgs.numactl
-      pkgs.pulseaudio
-      pkgs.wayland
-      pkgs.xorg.libXcursor
-      pkgs.xorg.libXdamage
-      pkgs.xorg.libXrandr
-      pkgs.xorg.libXtst
-    ];
-    # libcuda needs to be resolved during runtime
-    autoPatchelfIgnoreMissingDeps = true;
-  });
+    # nsight_compute = prev.nsight_compute.overrideAttrs (oldAttrs: {
+    #   nativeBuildInputs =
+    #     oldAttrs.nativeBuildInputs
+    #     ++ (
+    #       if (versionOlder prev.nsight_compute.version "2022.2.0")
+    #       then [pkgs.qt5.wrapQtAppsHook]
+    #       else [pkgs.qt6.wrapQtAppsHook]
+    #     );
+    #   buildInputs =
+    #     oldAttrs.buildInputs
+    #     ++ (
+    #       if (versionOlder prev.nsight_compute.version "2022.2.0")
+    #       then [pkgs.qt5.qtwebview]
+    #       else [pkgs.qt6.qtwebview]
+    #     );
+    # });
 
   nvidia_driver = prev.nvidia_driver.overrideAttrs (oldAttrs: {
     # libcuda needs to be resolved during runtime
@@ -139,4 +144,4 @@ in
     # in linuxPackages.
     meta.broken = true;
   });
-})
+}

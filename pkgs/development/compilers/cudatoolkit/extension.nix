@@ -1,4 +1,4 @@
-final: prev: let
+final: _: let
   ### Cuda Toolkit
 
   # Function to build the class cudatoolkit package

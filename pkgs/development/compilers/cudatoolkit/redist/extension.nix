@@ -44,14 +44,18 @@ final: prev:
 let
   # NOTE: We use hasAttr throughout instead of the (?) operator because hasAttr does not require
   # us to interpolate our variables into strings (like ${attrName}).
-  inherit (builtins) attrNames concatMap hasAttr listToAttrs removeAttrs;
+  inherit (builtins) attrNames concatMap getAttr hasAttr listToAttrs removeAttrs;
   inherit (final) callPackage;
   inherit (prev) cudaVersion;
-  inherit (prev.lib.attrsets) nameValuePair optionalAttrs;
-  inherit (prev.lib.lists) optionals;
+  inherit (prev.pkgs) config;
+  inherit (prev.lib.attrsets) filterAttrs mapAttrs' nameValuePair optionalAttrs;
+  inherit (prev.lib.lists) filter intersectLists map  optionals;
   inherit (prev.lib.trivial) flip importJSON pipe;
 
-  # Manifest files for CUDA redistributables (aka redist). These can be found at
+  # Make sure to use the system for the platform we want to run on, so we fetch the correct libs
+  inherit (prev.pkgs.stdenv.hostPlatform) system;
+
+  # Manifest files for CDUA redistributables (aka redist). These can be found at
   # https://developer.download.nvidia.com/compute/cuda/redist/
   # Maps a cuda version to the specific version of the manifest.
   cudaVersionMap = {
@@ -94,6 +98,52 @@ let
       manifest = processManifest ./manifests/redistrib_${fullCudaVersion}.json;
     };
 
+  # We need to find out whether we're building any Jetson capabilities so we know whether to swap
+  # out the default `linux-sbsa` redist (for server-grade ARM chips) with the `linux-aarch64`
+  # redist (which is for Jetson devices).
+  # Import the list of GPUs.
+  gpus = builtins.import ../gpus.nix;
+  # Get the compute capabilities of all Jetson devices.
+  jetsonComputeCapabilities = pipe gpus [
+    (filter (getAttr "isJetson"))
+    (map (getAttr "computeCapability"))
+  ];
+  # Find the intersection with the user-specified list of cudaCapabilities.
+  # NOTE: Jetson devices are never built by default because they cannot be targeted along
+  # non-Jetson devices and require an aarch64 host platform. As such, if they're present anywhere,
+  # they must be in the user-specified config.cudaCapabilities.
+  # NOTE: We don't need to worry about mixes of Jetson and non-Jetson devices here -- there's
+  # sanity-checking for all that in cudaFlags.
+  jetsonTargets = intersectLists jetsonComputeCapabilities (config.cudaCapabilities or []);
+
+  # Maps NVIDIA redist arch to Nix arch.
+  # NOTE: We swap out the default `linux-sbsa` redist (for server-grade ARM chips) with the
+  # `linux-aarch64` redist (which is for Jetson devices) if we're building any Jetson devices.
+  # Since both are based on aarch64, we can only have one or the other, otherwise there's an
+  # ambiguity as to which should be used.
+  redistArchToNixSystem =
+    {
+      # Available under pkgsCross.powernv
+      linux-ppc64le = "powerpc64le-linux";
+      # Available under pkgsCross.x86_64-multiplatform
+      linux-x86_64 = "x86_64-linux";
+      # Available under pkgsCross.mingwW64
+      windows-x86_64 = "x86_64-windows";
+    }
+    // (
+      if jetsonTargets != []
+      then {
+        # linux-aarch64 is Linux for Tegra (Jetson)
+        # Available under pkgsCross.aarch64-embedded
+        linux-aarch64 = "aarch64-linux";
+      }
+      else {
+        # linux-sbsa is Linux for ARM (server-grade)
+        # Available under pkgsCross.aarch64-multiplatform
+        linux-sbsa = "aarch64-linux";
+      }
+    );
+
   # Function to build a single redist package
   buildRedistPackage = callPackage ./build-cuda-redist-package.nix { };
 
@@ -104,10 +154,14 @@ let
         let
           # Get the redist architectures the package provides distributables for
           packageAttrs = manifest.${pname};
+          supportedRedistArchToNixSystem =
+            filterAttrs (arch: _: hasAttr arch packageAttrs) redistArchToNixSystem;
+          supportedNixSystemToRedistArch =
+            mapAttrs' (flip nameValuePair) supportedRedistArchToNixSystem;
 
           # Check if supported
-          # TODO(@connorbaker): Currently hardcoding x86_64-linux as the only supported platform.
-          isSupported = packageAttrs ? linux-x86_64;
+          isSupported = hasAttr system supportedNixSystemToRedistArch;
+          redistArch = supportedNixSystemToRedistArch.${system};
 
           # Build the derivation
           drv = buildRedistPackage {
@@ -115,9 +169,9 @@ let
             # TODO(@connorbaker): We currently discard the license attribute.
             inherit (manifest.${pname}) version;
             description = manifest.${pname}.name;
-            platforms = [ "x86_64-linux" ];
-            releaseAttrs = manifest.${pname}.linux-x86_64;
-            releaseFeaturesAttrs = features.${pname}.linux-x86_64;
+            platforms = attrNames supportedNixSystemToRedistArch;
+            releaseAttrs = manifest.${pname}.${redistArch};
+            releaseFeaturesAttrs = features.${pname}.${redistArch};
           };
 
           # Wrap in an optional so we can filter out the empty lists created by unsupported
