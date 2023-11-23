@@ -3428,6 +3428,8 @@ self: super: with self; {
 
   drf-yasg = callPackage ../development/python-modules/drf-yasg { };
 
+  drjit = callPackage ../development/python-modules/drjit { };
+
   drivelib = callPackage ../development/python-modules/drivelib { };
 
   drms = callPackage ../development/python-modules/drms { };
@@ -7123,6 +7125,8 @@ self: super: with self; {
 
   mitogen = callPackage ../development/python-modules/mitogen { };
 
+  mitsuba3 = callPackage ../development/python-modules/mitsuba3 { };
+
   mixins = callPackage ../development/python-modules/mixins { };
 
   mixpanel = callPackage ../development/python-modules/mixpanel { };
@@ -8177,6 +8181,8 @@ self: super: with self; {
   name-that-hash = callPackage ../development/python-modules/name-that-hash { };
 
   nampa = callPackage ../development/python-modules/nampa { };
+
+  nanobind = callPackage ../development/python-modules/nanobind { };
 
   nanoid = callPackage ../development/python-modules/nanoid { };
 

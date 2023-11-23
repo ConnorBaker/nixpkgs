@@ -7,6 +7,7 @@
 stdenv.mkDerivation (finalAttrs: {
   pname = "fast-float";
   version = "6.0.0";
+  strictDeps = true;
 
   src = fetchFromGitHub {
     owner = "fastfloat";
