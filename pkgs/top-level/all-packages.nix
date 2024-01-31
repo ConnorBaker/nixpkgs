@@ -7953,6 +7953,7 @@ with pkgs;
   elasticsearch-curator = callPackage ../tools/admin/elasticsearch-curator { };
 
   embree = callPackage ../development/libraries/embree { };
+  embree3 = callPackage ../development/libraries/embree/3.x.nix { };
   embree2 = callPackage ../development/libraries/embree/2.x.nix { };
 
   emborg = python3Packages.callPackage ../development/python-modules/emborg { };
