@@ -98,7 +98,7 @@ in
 
 assert (builtins.match "[^[:space:]]*" gpuTargetString) != null;
 
-stdenv.mkDerivation {
+stdenv.mkDerivation (finalAttrs: {
   pname = "magma";
   inherit version;
 
@@ -211,6 +211,11 @@ stdenv.mkDerivation {
   passthru = {
     inherit cudaSupport rocmSupport gpuTargets;
     cudaPackages = effectiveCudaPackages;
+
+    phases = builtins.import ./phases.nix {
+      inherit lib;
+      drv = finalAttrs.finalPackage;
+    };
   };
 
   meta = with lib; {
@@ -227,4 +232,4 @@ stdenv.mkDerivation {
       || (cudaSupport && cudaOlder "9.0")
       || (cudaSupport && strings.versionOlder version "2.7.1" && cudaPackages_11 == null);
   };
-}
+})
