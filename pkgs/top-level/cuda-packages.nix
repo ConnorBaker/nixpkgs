@@ -77,6 +77,8 @@ let
     saxpy = final.callPackage ../development/cuda-modules/saxpy { };
     nccl = final.callPackage ../development/cuda-modules/nccl { };
     nccl-tests = final.callPackage ../development/cuda-modules/nccl-tests { };
+
+    cmake-cuda-tests = final.callPackage ../development/cuda-modules/cmake-cuda-tests { };
   });
 
   mkVersionedPackageName =
