@@ -1,173 +1,256 @@
-# Notes:
-#
-# Silvan (Tweag) covered some things on recursive attribute sets in the Nix Hour:
-# https://www.youtube.com/watch?v=BgnUFtd1Ivs
-#
-# I (@connorbaker) highly recommend watching it.
-#
-# Most helpful comment regarding recursive attribute sets:
-#
-# https://github.com/NixOS/nixpkgs/pull/256324#issuecomment-1749935979
-#
-# To summarize:
-#
-# - `prev` should only be used to access attributes which are going to be overriden.
-# - `final` should only be used to access `callPackage` to build new packages.
-# - Attribute names should be computable without relying on `final`.
-#   - Extensions should take arguments to build attribute names before relying on `final`.
-#
-# Silvan's recommendation then is to explicitly use `callPackage` to provide everything our
-# extensions need to compute the attribute names, without relying on `final`.
-#
-# I've (@connorbaker) attempted to do that, though I'm unsure of how this will interact with overrides.
-{
-  callPackage,
-  cudaVersion,
-  lib,
-  newScope,
-  pkgs,
-  config,
-}:
 let
-  inherit (lib)
-    attrsets
-    customisation
-    fixedPoints
-    lists
-    strings
-    trivial
-    versions
-    ;
-  # Backbone
-  gpus = builtins.import ../development/cuda-modules/gpus.nix;
-  nvccCompatibilities = builtins.import ../development/cuda-modules/nvcc-compatibilities.nix;
-  flags = callPackage ../development/cuda-modules/flags.nix { inherit cudaVersion gpus; };
-  passthruFunction = final: ({
-    inherit cudaVersion lib pkgs;
-    inherit gpus nvccCompatibilities flags;
-    cudaMajorVersion = versions.major cudaVersion;
-    cudaMajorMinorVersion = versions.majorMinor cudaVersion;
-    cudaOlder = strings.versionOlder cudaVersion;
-    cudaAtLeast = strings.versionAtLeast cudaVersion;
+  inherit (builtins) throw warn;
 
-    # Maintain a reference to the final cudaPackages.
-    # Without this, if we use `final.callPackage` and a package accepts `cudaPackages` as an
-    # argument, it's provided with `cudaPackages` from the top-level scope, which is not what we
-    # want. We want to provide the `cudaPackages` from the final scope -- that is, the *current*
-    # scope. However, we also want to prevent `pkgs/top-level/release-attrpaths-superset.nix` from
-    # recursing more than one level here.
-    cudaPackages = final // {
+  lib = import ../../lib;
+  inherit (lib.attrsets)
+    attrNames
+    mapAttrs
+    recursiveUpdate
+    ;
+  inherit (lib.customisation) callPackagesWith;
+  inherit (lib.fixedPoints) composeManyExtensions extends;
+  inherit (lib.lists) all foldl' map;
+  inherit (lib.modules) evalModules;
+  inherit (lib.strings) versionAtLeast versionOlder;
+  inherit (lib.trivial)
+    const
+    flip
+    mapNullable
+    pipe
+    ;
+  inherit (lib.versions) major majorMinor;
+
+  cudaLib = import ../development/cuda-modules/lib { inherit lib; };
+  inherit (cudaLib.utils)
+    addNameToFetchFromGitLikeArgs
+    bimap
+    dropDots
+    mkCudaPackagesOverrideAttrsDefaultsFn
+    mkCudaPackagesScope
+    mkCudaPackagesVersionedName
+    mkRealArchitecture
+    packagesFromDirectoryRecursive'
+    ;
+
+  dontRecurseForDerivationsOrEvaluate =
+    attrs:
+    attrs
+    // {
+      # Don't recurse for derivations
+      recurseForDerivations = false;
+      # Don't attempt eval
       __attrsFailEvaluation = true;
     };
 
-    # TODO(@connorbaker): `cudaFlags` is an alias for `flags` which should be removed in the future.
-    cudaFlags = flags;
+  mkCudaPackages =
+    final: cudaPackagesConfig:
+    let
+      # NOTE: This value is considered an implementation detail and should not be exposed in the attribute set.
+      inherit (cudaPackagesConfig) cudaMajorMinorPatchVersion;
 
-    # Exposed as cudaPackages.backendStdenv.
-    # This is what nvcc uses as a backend,
-    # and it has to be an officially supported one (e.g. gcc11 for cuda11).
-    #
-    # It, however, propagates current stdenv's libstdc++ to avoid "GLIBCXX_* not found errors"
-    # when linked with other C++ libraries.
-    # E.g. for cudaPackages_11_8 we use gcc11 with gcc12's libstdc++
-    # Cf. https://github.com/NixOS/nixpkgs/pull/218265 for context
-    backendStdenv = final.callPackage ../development/cuda-modules/backend-stdenv.nix { };
+      mkAlias = if final.config.allowAliases then warn else flip const throw;
 
-    # Loose packages
+      pkgs = dontRecurseForDerivationsOrEvaluate (
+        let
+          cudaPackagesMajorMinorPatchVersionName = mkCudaPackagesVersionedName cudaMajorMinorPatchVersion;
+          cudaPackagesMajorMinorVersionName = mkCudaPackagesVersionedName (
+            majorMinor cudaMajorMinorPatchVersion
+          );
+          cudaPackagesMajorVersionName = mkCudaPackagesVersionedName (major cudaMajorMinorPatchVersion);
+          cudaPackagesUnversionedName = "cudaPackages";
+        in
+        if
+          # Returns true if the three CUDA package set aliases match the provided CUDA package set version.
+          all
+            (
+              packageSetAliasName:
+              final.${packageSetAliasName}.cudaPackagesConfig.cudaMajorMinorPatchVersion
+              == cudaMajorMinorPatchVersion
+            )
+            [
+              cudaPackagesMajorMinorVersionName
+              cudaPackagesMajorVersionName
+              cudaPackagesUnversionedName
+            ]
+        then
+          final
+        else
+          final.extend (
+            final: _: {
+              # cudaPackages_x_y = cudaPackages_x_y_z
+              ${cudaPackagesMajorMinorVersionName} =
+                final.cudaPackagesVersions.${cudaPackagesMajorMinorPatchVersionName};
+              # cudaPackages_x = cudaPackages_x_y
+              ${cudaPackagesMajorVersionName} = final.${cudaPackagesMajorMinorVersionName};
+              # cudaPackages = cudaPackages_x
+              ${cudaPackagesUnversionedName} = final.${cudaPackagesMajorVersionName};
+            }
+          )
+      );
 
-    # TODO: Move to aliases.nix once all Nixpkgs has migrated to the splayed CUDA packages
-    cudatoolkit = final.callPackage ../development/cuda-modules/cudatoolkit/redist-wrapper.nix { };
-    cudatoolkit-legacy-runfile = final.callPackage ../development/cuda-modules/cudatoolkit { };
+      cudaNamePrefix = "cuda${majorMinor cudaMajorMinorPatchVersion}";
 
-    saxpy = final.callPackage ../development/cuda-modules/saxpy { };
-    nccl = final.callPackage ../development/cuda-modules/nccl { };
-    nccl-tests = final.callPackage ../development/cuda-modules/nccl-tests { };
+      overrideAttrsDefaultsFn = mkCudaPackagesOverrideAttrsDefaultsFn {
+        inherit (final) deduplicateRunpathEntriesHook;
+        inherit cudaNamePrefix;
+      };
 
-    tests =
-      let
-        bools = [
-          true
-          false
-        ];
-        configs = {
-          openCVFirst = bools;
-          useOpenCVDefaultCuda = bools;
-          useTorchDefaultCuda = bools;
-        };
-        builder =
-          {
-            openCVFirst,
-            useOpenCVDefaultCuda,
-            useTorchDefaultCuda,
-          }@config:
-          {
-            name = strings.concatStringsSep "-" (
-              [
-                "test"
-                (if openCVFirst then "opencv" else "torch")
-              ]
-              ++ lists.optionals (if openCVFirst then useOpenCVDefaultCuda else useTorchDefaultCuda) [
-                "with-default-cuda"
-              ]
-              ++ [
-                "then"
-                (if openCVFirst then "torch" else "opencv")
-              ]
-              ++ lists.optionals (if openCVFirst then useTorchDefaultCuda else useOpenCVDefaultCuda) [
-                "with-default-cuda"
-              ]
-            );
-            value = final.callPackage ../development/cuda-modules/tests/opencv-and-torch config;
-          };
-      in
-      attrsets.listToAttrs (attrsets.mapCartesianProduct builder configs);
+      # Our package set is either built from a fixed-point function (AKA self-map), or from recursively merging attribute sets.
+      # I choose recursively merging attribute sets because our scope is not flat, and with access to only the fixed point,
+      # we cannot build nested scopes incrementally (like adding aliases) because later definitions would overwrite earlier ones.
+      cudaPackagesFixedPoint =
+        finalCudaPackages:
+        foldl' recursiveUpdate
+          (
+            {
+              inherit cudaNamePrefix;
+              cudaPackages = dontRecurseForDerivationsOrEvaluate finalCudaPackages;
+              cudaPackagesConfig = dontRecurseForDerivationsOrEvaluate cudaPackagesConfig;
+              # NOTE: dontRecurseForDerivationsOrEvaluate is applied earlier to avoid the need to maintain two copies of
+              # pkgs -- one with and one without it applied.
+              inherit pkgs;
 
-    writeGpuTestPython = final.callPackage ../development/cuda-modules/write-gpu-test-python.nix { };
-  });
+              # Core
+              callPackages = callPackagesWith (pkgs // finalCudaPackages);
+              cudaMajorMinorVersion = majorMinor cudaMajorMinorPatchVersion;
 
-  mkVersionedPackageName =
-    name: version:
-    strings.concatStringsSep "_" [
-      name
-      (strings.replaceStrings [ "." ] [ "_" ] (versions.majorMinor version))
-    ];
+              # Utilities
+              cudaAtLeast = versionAtLeast cudaMajorMinorPatchVersion;
+              cudaOlder = versionOlder cudaMajorMinorPatchVersion;
 
-  composedExtension = fixedPoints.composeManyExtensions (
-    [
-      (import ../development/cuda-modules/setup-hooks/extension.nix)
-      (callPackage ../development/cuda-modules/cuda/extension.nix { inherit cudaVersion; })
-      (import ../development/cuda-modules/cuda/overrides.nix)
-      (callPackage ../development/cuda-modules/generic-builders/multiplex.nix {
-        inherit cudaVersion flags mkVersionedPackageName;
-        pname = "cudnn";
-        releasesModule = ../development/cuda-modules/cudnn/releases.nix;
-        shimsFn = ../development/cuda-modules/cudnn/shims.nix;
-        fixupFn = ../development/cuda-modules/cudnn/fixup.nix;
-      })
-      (callPackage ../development/cuda-modules/cutensor/extension.nix {
-        inherit cudaVersion flags mkVersionedPackageName;
-      })
-      (callPackage ../development/cuda-modules/generic-builders/multiplex.nix {
-        inherit cudaVersion flags mkVersionedPackageName;
-        pname = "tensorrt";
-        releasesModule = ../development/cuda-modules/tensorrt/releases.nix;
-        shimsFn = ../development/cuda-modules/tensorrt/shims.nix;
-        fixupFn = ../development/cuda-modules/tensorrt/fixup.nix;
-      })
-      (callPackage ../development/cuda-modules/cuda-samples/extension.nix { inherit cudaVersion; })
-      (callPackage ../development/cuda-modules/cuda-library-samples/extension.nix { })
-    ]
-    ++ lib.optionals config.allowAliases [ (import ../development/cuda-modules/aliases.nix) ]
-  );
+              # Utility function for automatically naming fetchFromGitHub derivations with `name`.
+              fetchFromGitHub =
+                args: final.fetchFromGitHub (addNameToFetchFromGitLikeArgs final.fetchFromGitHub args);
+              fetchFromGitLab =
+                args: final.fetchFromGitLab (addNameToFetchFromGitLikeArgs final.fetchFromGitLab args);
 
-  cudaPackages = customisation.makeScope newScope (
-    fixedPoints.extends composedExtension passthruFunction
-  );
+              # Aliases
+              flags = {
+                cudaComputeCapabilityToName = mkAlias "cudaPackages.flags.cudaComputeCapabilityToName is deprecated, use cudaPackages.flags.cudaCapabilityToArchName instead" finalCudaPackages.flags.cudaCapabilityToArchName;
+                dropDot = mkAlias "cudaPackages.flags.dropDot is deprecated, use cudaLibs.utils.dropDots instead" dropDots;
+                isJetsonBuild = mkAlias "cudaPackages.flags.isJetsonBuild is deprecated, use cudaPackages.cudaPackagesConfig.hasJetsonCudaCapability instead" cudaPackagesConfig.hasJetsonCudaCapability;
+              };
+              backendStdenv = mkAlias "cudaPackages.backendStdenv has been removed, use stdenv instead" final.stdenv;
+              cudaVersion = mkAlias "cudaPackages.cudaVersion is deprecated, use cudaPackages.cudaMajorMinorVersion instead" finalCudaPackages.cudaMajorMinorVersion;
+              cudaMajorMinorPatchVersion = mkAlias "cudaPackages.cudaMajorMinorPatchVersion is an implementation detail, please use cudaPackages.cudaMajorMinorVersion instead" cudaPackagesConfig.cudaMajorMinorPatchVersion;
+              cudaFlags = mkAlias "cudaPackages.cudaFlags is deprecated, use cudaPackages.flags instead" finalCudaPackages.flags;
+              cudnn_8_9 = throw "cudaPackages.cudnn_8_9 has been removed, use cudaPackages.cudnn instead";
+            }
+            # Redistributable packages
+            // mapAttrs (
+              packageName:
+              {
+                callPackageOverrider,
+                packageInfo,
+                redistName,
+                releaseInfo,
+                srcArgs,
+                supportedNixSystemAttrs,
+                supportedRedistSystemAttrs,
+              }:
+              pipe
+                {
+                  inherit
+                    packageInfo
+                    packageName
+                    redistName
+                    releaseInfo
+                    ;
+                  src = mapNullable final.fetchzip srcArgs;
+                  # NOTE: Don't need to worry about sorting the attribute names because Nix already does that.
+                  supportedNixSystems = attrNames supportedNixSystemAttrs;
+                  supportedRedistSystems = attrNames supportedRedistSystemAttrs;
+                }
+                [
+                  # Build the package
+                  finalCudaPackages.redist-builder
+                  # Apply our defaults
+                  (pkg: pkg.overrideAttrs overrideAttrsDefaultsFn)
+                  # Apply optional fixups
+                  (
+                    pkg:
+                    if callPackageOverrider == null then
+                      pkg
+                    else
+                      pkg.overrideAttrs (finalCudaPackages.callPackage callPackageOverrider { })
+                  )
+                ]
+            ) cudaPackagesConfig.packageConfigs
+          )
+          # CUDA version-specific packages
+          (
+            map (packagesFromDirectoryRecursive' finalCudaPackages.callPackage) cudaPackagesConfig.packagesDirectories
+          );
+    in
+    mkCudaPackagesScope pkgs.newScope (
+      # User additions are included through cudaPackagesExtensions
+      extends (composeManyExtensions final.cudaPackagesExtensions) cudaPackagesFixedPoint
+    );
+
 in
-# We want to warn users about the upcoming deprecation of old CUDA
-# versions, without breaking Nixpkgs CI with evaluation warnings. This
-# gross hack ensures that the warning only triggers if aliases are
-# enabled, which is true by default, but not for ofborg.
-lib.warnIf (cudaPackages.cudaOlder "12.0" && config.allowAliases)
-  "CUDA versions older than 12.0 will be removed in Nixpkgs 25.05; see the 24.11 release notes for more information"
-  cudaPackages
+final: _: {
+  # Make sure to use `lib` from `prev` to avoid attribute names (in which attribute sets are strict) depending on the
+  # fixed point, as this causes infinite recursion.
+  cudaLib = dontRecurseForDerivationsOrEvaluate cudaLib;
+
+  # For inspecting the results of the module system evaluation.
+  cudaConfig =
+    dontRecurseForDerivationsOrEvaluate
+      (evalModules {
+        modules = [
+          ../development/cuda-modules/modules
+          {
+            cudaCapabilities = final.config.cudaCapabilities or [ ];
+            cudaForwardCompat = final.config.cudaForwardCompat or true;
+            hostNixSystem = final.stdenv.hostPlatform.system;
+          }
+        ] ++ final.cudaModules;
+        specialArgs = {
+          inherit (final) cudaLib;
+        };
+      }).config;
+
+  # For changing the manifests available.
+  cudaModules = [ ];
+
+  # For adding packages in an ad-hoc manner.
+  cudaPackagesExtensions = [ ];
+
+  # Versioned package sets
+  cudaPackagesVersions = dontRecurseForDerivationsOrEvaluate (
+    bimap mkCudaPackagesVersionedName (mkCudaPackages final) final.cudaConfig.cudaPackages
+  );
+
+  # Package set aliases with a major and minor component are drawn directly from final.cudaPackagesVersions.
+  # The patch-versioned package sets are not available at the top level because they may be removed without
+  # notice.
+  cudaPackages_12_2 = final.cudaPackagesVersions.cudaPackages_12_2_2;
+  cudaPackages_12_6 = final.cudaPackagesVersions.cudaPackages_12_6_3;
+  cudaPackages_12_8 = final.cudaPackagesVersions.cudaPackages_12_8_0;
+  # Package set aliases with a major component refer to an alias with a major and minor component in final.
+  # TODO: Deferring upgrade to CUDA 12.8 until separate compilation works.
+  cudaPackages_12 = final.cudaPackages_12_6;
+  # Unversioned package set alias refers to an alias with a major component in final.
+  cudaPackages = final.cudaPackages_12;
+
+  # Nixpkgs package sets matrixed by real architecture (e.g., `sm_90a`).
+  # TODO(@connorbaker): Yes, it is computationally expensive to call nixpkgsFun.
+  # No, I can't think of a different way to force re-evaluation of the fixed point -- the problem being that
+  # pkgs.config is not part of the fixed point.
+  pkgsCuda =
+    let
+      mkPkgs =
+        cudaCapabilityInfo:
+        final.extend (
+          _: prev:
+          dontRecurseForDerivationsOrEvaluate {
+            config = prev.config // {
+              cudaCapabilities = [ cudaCapabilityInfo.cudaCapability ];
+            };
+          }
+        );
+    in
+    dontRecurseForDerivationsOrEvaluate (
+      bimap mkRealArchitecture mkPkgs final.cudaConfig.data.cudaCapabilityToInfo
+    );
+}

@@ -2949,30 +2949,6 @@ with pkgs;
 
   cron = isc-cron;
 
-  cudaPackages_11_0 = callPackage ./cuda-packages.nix { cudaVersion = "11.0"; };
-  cudaPackages_11_1 = callPackage ./cuda-packages.nix { cudaVersion = "11.1"; };
-  cudaPackages_11_2 = callPackage ./cuda-packages.nix { cudaVersion = "11.2"; };
-  cudaPackages_11_3 = callPackage ./cuda-packages.nix { cudaVersion = "11.3"; };
-  cudaPackages_11_4 = callPackage ./cuda-packages.nix { cudaVersion = "11.4"; };
-  cudaPackages_11_5 = callPackage ./cuda-packages.nix { cudaVersion = "11.5"; };
-  cudaPackages_11_6 = callPackage ./cuda-packages.nix { cudaVersion = "11.6"; };
-  cudaPackages_11_7 = callPackage ./cuda-packages.nix { cudaVersion = "11.7"; };
-  cudaPackages_11_8 = callPackage ./cuda-packages.nix { cudaVersion = "11.8"; };
-  cudaPackages_11 = recurseIntoAttrs cudaPackages_11_8;
-
-  cudaPackages_12_0 = callPackage ./cuda-packages.nix { cudaVersion = "12.0"; };
-  cudaPackages_12_1 = callPackage ./cuda-packages.nix { cudaVersion = "12.1"; };
-  cudaPackages_12_2 = callPackage ./cuda-packages.nix { cudaVersion = "12.2"; };
-  cudaPackages_12_3 = callPackage ./cuda-packages.nix { cudaVersion = "12.3"; };
-  cudaPackages_12_4 = callPackage ./cuda-packages.nix { cudaVersion = "12.4"; };
-  cudaPackages_12 = cudaPackages_12_4; # Latest supported by cudnn
-
-  cudaPackages = recurseIntoAttrs cudaPackages_12;
-
-  # TODO: move to alias
-  cudatoolkit = cudaPackages.cudatoolkit;
-  cudatoolkit_11 = cudaPackages_11.cudatoolkit;
-
   curlFull = curl.override {
     ldapSupport = true;
     gsaslSupport = true;

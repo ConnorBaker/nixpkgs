@@ -14,6 +14,7 @@ let
   # this value gets reused even if this file is imported multiple times,
   # thanks to Nix's import-value cache.
   autoCalledPackages = import ./by-name-overlay.nix ../by-name;
+  cudaPackages = import ./cuda-packages.nix;
 in
 
 { ## Misc parameters kept the same for all stages
@@ -374,6 +375,7 @@ let
     splice
     autoCalledPackages
     allPackages
+    cudaPackages
     otherPackageSets
     aliases
     configOverrides

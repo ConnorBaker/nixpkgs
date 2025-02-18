@@ -1,53 +1,86 @@
 {
-  buildPythonPackage,
-  addDriverRunpath,
-  fetchPypi,
-  fetchFromGitHub,
-  mako,
   boost,
-  numpy,
-  pytools,
-  pytest,
-  decorator,
-  appdirs,
-  six,
+  buildPythonPackage,
+  config,
+  cudaLib,
   cudaPackages,
-  python,
-  mkDerivation,
+  cudaSupport ? config.cudaSupport,
+  fetchFromGitHub,
   lib,
+  mako,
+  numpy,
+  platformdirs,
+  python3,
+  pytools,
+  setuptools,
+  wheel,
 }:
 let
-  compyte = import ./compyte.nix { inherit mkDerivation fetchFromGitHub; };
+  inherit (cudaLib.utils) dropDots;
+  inherit (cudaPackages)
+    cuda_cudart
+    cuda_nvcc
+    cuda_profiler_api
+    libcurand
+    ;
+  inherit (lib) licenses maintainers teams;
+  inherit (lib.versions) majorMinor;
 
-  inherit (cudaPackages) cudatoolkit;
+  compyteSrc = fetchFromGitHub {
+    owner = "inducer";
+    repo = "compyte";
+    rev = "955160ac2f504dabcd8641471a56146fa1afe35d";
+    hash = "sha256-uObxDGBQ41HLDoKC5RtZk310niRjIupNiJaS2cFRP7c=";
+  };
 in
-buildPythonPackage rec {
-  pname = "pycuda";
-  version = "2024.1.2";
-  format = "setuptools";
+buildPythonPackage {
+  # Must opt-out of __structuredAttrs which is set to true by default by cudaPackages.callPackage, but currently
+  # incompatible with Python packaging: https://github.com/NixOS/nixpkgs/pull/347194.
+  __structuredAttrs = false;
 
-  src = fetchPypi {
-    inherit pname version;
-    hash = "sha256-0RC3J8vqhZ2ktj6Rtvoen8MsW63gLYn/RJl1mW6cz6s=";
+  pname = "pycuda";
+  version = "2024.1.2-unstable-2024-11-05";
+  pyproject = true;
+
+  src = fetchFromGitHub {
+    owner = "inducer";
+    repo = "pycuda";
+    rev = "247be65a858ff0ee8a24ffc09013c067e028bbdf";
+    hash = "sha256-i1Xy/WW8ZPL3EckExzFyBmO1D5BFX6jZMydmBDQZOA8=";
   };
 
-  preConfigure = with lib.versions; ''
-    ${python.pythonOnBuildForHost.interpreter} configure.py --boost-inc-dir=${boost.dev}/include \
-                          --boost-lib-dir=${boost}/lib \
-                          --no-use-shipped-boost \
-                          --boost-python-libname=boost_python${major python.version}${minor python.version} \
-                          --cuda-root=${cudatoolkit}
+  build-system = [
+    setuptools
+    wheel
+  ];
+
+  nativeBuildInputs = [
+    cuda_nvcc
+  ];
+
+  preConfigure = ''
+    ${python3.pythonOnBuildForHost.interpreter} configure.py \
+      --no-use-shipped-boost \
+      --boost-python-libname=boost_python${dropDots (majorMinor python3.version)}
   '';
+
+  dependencies = [
+    boost
+    mako
+    numpy
+    platformdirs
+    pytools
+  ];
+
+  buildInputs = [
+    cuda_nvcc
+    cuda_cudart
+    cuda_profiler_api
+    libcurand
+  ];
 
   postInstall = ''
-    ln -s ${compyte} $out/${python.sitePackages}/pycuda/compyte
-  '';
-
-  postFixup = ''
-    find $out/lib -type f \( -name '*.so' -or -name '*.so.*' \) | while read lib; do
-      echo "setting opengl runpath for $lib..."
-      addDriverRunpath "$lib"
-    done
+    ln -s "${compyteSrc}" "$out/${python3.sitePackages}/pycuda/compyte"
   '';
 
   # Requires access to libcuda.so.1 which is provided by the driver
@@ -57,25 +90,20 @@ buildPythonPackage rec {
     py.test
   '';
 
-  nativeBuildInputs = [ addDriverRunpath ];
-
-  propagatedBuildInputs = [
-    numpy
-    pytools
-    pytest
-    decorator
-    appdirs
-    six
-    cudatoolkit
-    compyte
-    python
-    mako
-  ];
-
-  meta = with lib; {
-    homepage = "https://github.com/inducer/pycuda/";
+  meta = {
+    broken = !cudaSupport;
     description = "CUDA integration for Python";
+    homepage = "https://github.com/inducer/pycuda/";
     license = licenses.mit;
-    maintainers = with maintainers; [ artuuge ];
+    platforms = [
+      "aarch64-linux"
+      "x86_64-linux"
+    ];
+    maintainers =
+      (with maintainers; [
+        artuuge
+        connorbaker
+      ])
+      ++ teams.cuda.members;
   };
 }
