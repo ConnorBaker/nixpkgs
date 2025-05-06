@@ -53,6 +53,7 @@ let
       pkgs
       ;
     inherit gpus nvccCompatibilities flags;
+    cudaNamePrefix = "cuda${final.cudaMajorMinorVersion}";
     cudaMajorVersion = versions.major cudaVersion;
     cudaMajorMinorVersion = versions.majorMinor cudaVersion;
     cudaOlder = strings.versionOlder cudaVersion;
