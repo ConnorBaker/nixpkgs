@@ -23,7 +23,7 @@ stdenv.mkDerivation {
     cp -R * $out/include
   '';
 
-  # Makes setupCudaHook propagate nvidia-optical-flow-sdk together with cuda
+  # Makes cudaHook propagate nvidia-optical-flow-sdk together with cuda
   # packages. Currently used by opencv4.cxxdev, hopefully can be removed in the
   # future
   nativeBuildInputs = [

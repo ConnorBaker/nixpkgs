@@ -32,7 +32,7 @@
   python310,
   python311,
   pulseaudio,
-  setupCudaHook,
+  cudaHook,
   stdenv,
   backendStdenv, # E.g. gcc11Stdenv, set in extension.nix
   unixODBC,
@@ -82,7 +82,7 @@ backendStdenv.mkDerivation rec {
     autoAddDriverRunpath
     markForCudaToolkitRootHook
   ] ++ lib.optionals (lib.versionAtLeast version "11.8") [ qt6Packages.wrapQtAppsHook ];
-  propagatedBuildInputs = [ setupCudaHook ];
+  propagatedBuildInputs = [ cudaHook ];
   buildInputs =
     [
       # To get $GDK_PIXBUF_MODULE_FILE via setup-hook

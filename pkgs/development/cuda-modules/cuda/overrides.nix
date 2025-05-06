@@ -197,7 +197,7 @@ filterAndCreateOverrides {
       lib,
       backendStdenv,
       cudaOlder,
-      setupCudaHook,
+      cudaHook,
     }:
     prevAttrs: {
       # Merge "bin" and "dev" into "out" to avoid circular references
@@ -255,7 +255,7 @@ filterAndCreateOverrides {
       # `propagatedNativeBuildInputs`, it stops being propagated to downstream packages during their build because
       # setup hooks in `propagatedNativeBuildInputs` are not designed to affect the runtime or build environment of
       # dependencies; they are only meant to affect the build environment of the package that directly includes them.
-      propagatedBuildInputs = (prevAttrs.propagatedBuildInputs or [ ]) ++ [ setupCudaHook ];
+      propagatedBuildInputs = (prevAttrs.propagatedBuildInputs or [ ]) ++ [ cudaHook ];
 
       postInstall =
         (prevAttrs.postInstall or "")

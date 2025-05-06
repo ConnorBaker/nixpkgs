@@ -9,7 +9,7 @@
   cutensor,
   cusparselt,
   cudaPackages,
-  setupCudaHook,
+  cudaHook,
   autoPatchelfHook,
 }:
 
