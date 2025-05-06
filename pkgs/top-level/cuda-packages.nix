@@ -82,6 +82,7 @@ let
     cudatoolkit-legacy-runfile = final.callPackage ../development/cuda-modules/cudatoolkit { };
 
     # Aliases
+    autoAddCudaCompatRunpath = lib.warn "cudaPackages.autoAddCudaCompatRunpath is deprecated and no longer necessary" pkgs.emptyFile;
     markForCudatoolkitRootHook = lib.warn "cudaPackages.markForCudatoolkitRootHook is deprecated; switch to cudaPackages.markForCudaToolkitRootHook" final.markForCudaToolkitRootHook;
     setupCudaHook = lib.warn "cudaPackages.setupCudaHook is deprecated; switch to cudaPackages.cudaHook" final.cudaHook;
 
