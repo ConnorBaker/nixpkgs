@@ -21,7 +21,7 @@
   libkrb5,
   krb5,
   makeWrapper,
-  markForCudatoolkitRootHook,
+  markForCudaToolkitRootHook,
   ncurses5,
   ncurses6,
   numactl,
@@ -80,7 +80,7 @@ backendStdenv.mkDerivation rec {
     addDriverRunpath
     autoPatchelfHook
     autoAddDriverRunpath
-    markForCudatoolkitRootHook
+    markForCudaToolkitRootHook
   ] ++ lib.optionals (lib.versionAtLeast version "11.8") [ qt6Packages.wrapQtAppsHook ];
   propagatedBuildInputs = [ setupCudaHook ];
   buildInputs =

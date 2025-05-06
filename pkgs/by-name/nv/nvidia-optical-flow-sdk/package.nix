@@ -27,7 +27,7 @@ stdenv.mkDerivation {
   # packages. Currently used by opencv4.cxxdev, hopefully can be removed in the
   # future
   nativeBuildInputs = [
-    cudaPackages.markForCudatoolkitRootHook
+    cudaPackages.markForCudaToolkitRootHook
   ];
 
   meta = with lib; {

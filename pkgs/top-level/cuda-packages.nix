@@ -81,6 +81,9 @@ let
     cudatoolkit = final.callPackage ../development/cuda-modules/cudatoolkit/redist-wrapper.nix { };
     cudatoolkit-legacy-runfile = final.callPackage ../development/cuda-modules/cudatoolkit { };
 
+    # Aliases
+    markForCudatoolkitRootHook = lib.warn "cudaPackages.markForCudatoolkitRootHook is deprecated; switch to cudaPackages.markForCudaToolkitRootHook" final.markForCudaToolkitRootHook;
+
     tests =
       let
         bools = [
