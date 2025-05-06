@@ -20,6 +20,10 @@
 # extensions need to compute the attribute names, without relying on `final`.
 #
 # I've (@connorbaker) attempted to do that, though I'm unsure of how this will interact with overrides.
+let
+  # Declared here to benefit from import caching.
+  cudaLib = import ../development/cuda-modules/lib { lib = import ../../lib; };
+in
 {
   callPackage,
   cudaVersion,
@@ -42,7 +46,12 @@ let
   nvccCompatibilities = builtins.import ../development/cuda-modules/nvcc-compatibilities.nix;
   flags = callPackage ../development/cuda-modules/flags.nix { inherit cudaVersion gpus; };
   passthruFunction = final: {
-    inherit cudaVersion lib pkgs;
+    inherit
+      cudaLib
+      cudaVersion
+      lib
+      pkgs
+      ;
     inherit gpus nvccCompatibilities flags;
     cudaMajorVersion = versions.major cudaVersion;
     cudaMajorMinorVersion = versions.majorMinor cudaVersion;
