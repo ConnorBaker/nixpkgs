@@ -79,8 +79,10 @@ let
 
   majorVersion = versions.major version;
   atLeast14 = versionAtLeast version "14";
+  atLeast13 = versionAtLeast version "13";
   is14 = majorVersion == "14";
   is13 = majorVersion == "13";
+  is12 = majorVersion == "12";
 
   # releases have a form: MAJOR.MINOR.MICRO, like 14.2.1
   # snapshots have a form like MAJOR.MINOR.MICRO.DATE, like 14.2.1.20250322
@@ -399,7 +401,11 @@ pipe
           ;
         isGNU = true;
         hardeningUnsupportedFlags =
-          optional (
+          optionals (!atLeast13) [
+            "strictflexarrays1"
+            "strictflexarrays3"
+          ]
+          ++ optional (
             !(targetPlatform.isLinux && targetPlatform.isx86_64 && targetPlatform.libc == "glibc")
           ) "shadowstack"
           ++ optional (!(targetPlatform.isLinux && targetPlatform.isAarch64)) "pacret"
