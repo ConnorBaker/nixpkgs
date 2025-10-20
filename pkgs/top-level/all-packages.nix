@@ -4615,6 +4615,7 @@ with pkgs;
         extraBuildInputs = lib.optional stdenv.hostPlatform.isDarwin clang.cc;
       };
 
+  gcc11Stdenv = overrideCC gccStdenv buildPackages.gcc11;
   gcc12Stdenv = overrideCC gccStdenv buildPackages.gcc12;
   gcc13Stdenv = overrideCC gccStdenv buildPackages.gcc13;
   gcc14Stdenv = overrideCC gccStdenv buildPackages.gcc14;
@@ -4718,6 +4719,7 @@ with pkgs;
       });
 
   inherit (callPackage ../development/compilers/gcc/all.nix { inherit noSysDirs; })
+    gcc11
     gcc12
     gcc13
     gcc14
@@ -4737,6 +4739,34 @@ with pkgs;
   };
 
   gnat = gnat13; # When changing this, update also gnatPackages
+
+  gnat11 = wrapCC (
+    gcc11.cc.override {
+      name = "gnat";
+      langC = true;
+      langCC = false;
+      langAda = true;
+      profiledCompiler = false;
+      # As per upstream instructions building a cross compiler
+      # should be done with a (native) compiler of the same version.
+      # If we are cross-compiling GNAT, we may as well do the same.
+      gnat-bootstrap =
+        if stdenv.hostPlatform == stdenv.targetPlatform && stdenv.buildPlatform == stdenv.hostPlatform then
+          buildPackages.gnat-bootstrap11
+        else
+          buildPackages.gnat11;
+      stdenv =
+        if
+          stdenv.hostPlatform == stdenv.targetPlatform
+          && stdenv.buildPlatform == stdenv.hostPlatform
+          && stdenv.buildPlatform.isDarwin
+          && stdenv.buildPlatform.isx86_64
+        then
+          overrideCC stdenv gnat-bootstrap11
+        else
+          stdenv;
+    }
+  );
 
   gnat12 = wrapCC (
     gcc12.cc.override {
@@ -4851,6 +4881,14 @@ with pkgs;
   );
 
   gnat-bootstrap = gnat-bootstrap13;
+  gnat-bootstrap11 = wrapCCWith (
+    {
+      cc = callPackage ../development/compilers/gnat-bootstrap { majorVersion = "11"; };
+    }
+    // lib.optionalAttrs (stdenv.hostPlatform.isDarwin) {
+      bintools = bintoolsDualAs;
+    }
+  );
   gnat-bootstrap12 = wrapCCWith (
     {
       cc = callPackage ../development/compilers/gnat-bootstrap { majorVersion = "12"; };
