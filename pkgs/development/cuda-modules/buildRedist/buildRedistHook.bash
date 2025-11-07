@@ -29,6 +29,12 @@ buildRedistHookRegistration() {
 
   postFixupHooks+=(fixupCudaPropagatedBuildOutputsToOut)
   nixLog "added fixupCudaPropagatedBuildOutputsToOut to postFixupHooks"
+
+  # NOTE: We need to do this in postFixup since we don't write the dependency on removeStubsFromRunpathHook until
+  # postFixup -- recall recordPropagatedDependencies happens during fixupPhase.
+  # NOTE: Iff is shorthand for "if and only if" -- the logical biconditional.
+  postFixupHooks+=(checkCudaHasStubsIffIncludeRemoveStubsFromRunpathHook)
+  nixLog "added checkCudaHasStubsIffIncludeRemoveStubsFromRunpathHook to postFixupHooks"
 }
 
 buildRedistHookRegistration
@@ -134,6 +140,62 @@ checkCudaNonEmptyOutputs() {
   if ((${#failingOutputNames[@]})); then
     nixErrorLog "detected empty (excluding nix-support) outputs: ${failingOutputNames[*]}"
     nixErrorLog "this typically indicates a failure in packaging or moveToOutput ordering"
+    exit 1
+  fi
+
+  return 0
+}
+
+# Any redistributable providing stubs should set includeRemoveStubsFromRunpathHook to true -- since we don't track the
+# contents of the redistributables, it's only included by default if there is a stubs output.
+# This check additionally requires that any output which has a stubs directory includes a dependency on
+# includeRemoveStubsFromRunpathHook -- that way, if *any* of them are used, the hook is brought in as well.
+# Since includeRemoveStubsFromRunpathHook only adds the hook to whatever outputStubs resolves to, having stubs present
+# across multiple outputs will result in an error.
+checkCudaHasStubsIffIncludeRemoveStubsFromRunpathHook() {
+  local outputName
+  local -i hasStubs
+  local -i hasRemoveStubsFromRunpathHook
+  local -a outputNamesWronglyExcludingHook=()
+  local -a outputNamesWronglyIncludingHook=()
+
+  for outputName in $(getAllOutputNames); do
+    # Record the output if it contains a directory named "stubs" and doesn't include a dependency on
+    # removeStubsFromRunpathHook.
+    hasStubs=0
+    if find "${!outputName:?}" -mindepth 1 -type d -name stubs -print -quit | grep --silent .; then
+      hasStubs=1
+    fi
+
+    hasRemoveStubsFromRunpathHook=0
+    if
+      grep --silent --no-messages removeStubsFromRunpathHook "${!outputName:?}/nix-support/propagated-build-inputs"
+    then
+      hasRemoveStubsFromRunpathHook=1
+    fi
+
+    if ((hasStubs && !hasRemoveStubsFromRunpathHook)); then
+      # Outputs with stubs must include the hook.
+      outputNamesWronglyExcludingHook+=("${outputName:?}")
+    elif ((!hasStubs && hasRemoveStubsFromRunpathHook)); then
+      # Outputs without stubs cannot include the hook.
+      outputNamesWronglyIncludingHook+=("${outputName:?}")
+    fi
+  done
+
+  if ((${#outputNamesWronglyExcludingHook[@]})); then
+    nixErrorLog "includeRemoveStubsFromRunpathHook is false but we detected outputs containing a stubs" \
+      "directory: ${outputNamesWronglyExcludingHook[*]}"
+    nixErrorLog "ensure redistributables providing stubs set includeRemoveStubsFromRunpathHook to true"
+  fi
+
+  if ((${#outputNamesWronglyIncludingHook[@]})); then
+    nixErrorLog "includeRemoveStubsFromRunpathHook is true but we detected outputs without a stubs" \
+      "directory: ${outputNamesWronglyIncludingHook[*]}"
+    nixErrorLog "ensure redistributables without stubs do not set includeRemoveStubsFromRunpathHook to true"
+  fi
+
+  if ((${#outputNamesWronglyExcludingHook[@]} || ${#outputNamesWronglyIncludingHook[@]})); then
     exit 1
   fi
 
