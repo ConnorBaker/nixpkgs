@@ -11065,6 +11065,12 @@ self: super: with self; {
     };
   };
 
+  onnx-tensorrt = callPackage ../development/python-modules/onnx-tensorrt {
+    onnx-tensorrt = pkgs.onnx-tensorrt.override {
+      python3Packages = self;
+    };
+  };
+
   onnxconverter-common = callPackage ../development/python-modules/onnxconverter-common { };
 
   onnxmltools = callPackage ../development/python-modules/onnxmltools { };
