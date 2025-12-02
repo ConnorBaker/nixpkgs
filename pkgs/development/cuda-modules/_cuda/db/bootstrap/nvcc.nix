@@ -89,7 +89,7 @@
         minMajorVersion = "7";
       };
       gcc = {
-        maxMajorVersion = "10";
+        maxMajorVersion = "11";
         minMajorVersion = "6";
       };
     };
@@ -101,7 +101,7 @@
         minMajorVersion = "7";
       };
       gcc = {
-        maxMajorVersion = "10";
+        maxMajorVersion = "11";
         minMajorVersion = "6";
       };
     };

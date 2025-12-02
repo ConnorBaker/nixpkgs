@@ -251,6 +251,46 @@ let
             # Get the first available version.
             (findFirst (x: x != null) null)
           ];
+
+      wrapCCGlibCFix =
+        cc:
+        let
+          fixed-glibc = cc.bintools.libc.overrideAttrs (prevAttrs: {
+            postPatch = prevAttrs.postPatch or "" + ''
+              nixLog "Fixing GCC 11 NVCC malloc with attribues issue by patching $PWD/misc/sys/cdefs.h"
+              substituteInPlace "$PWD/misc/sys/cdefs.h" \
+                --replace-fail \
+                  '#if __GNUC_PREREQ (2,96) || __glibc_has_attribute (__malloc__)' \
+                  '#if 0'
+            '';
+          });
+
+          # Binutils with glibc multi
+          bintools = cc.bintools.override {
+            libc = fixed-glibc;
+          };
+        in
+        pkgs.wrapCCWith {
+          cc = cc.cc.override {
+            stdenv = pkgs.overrideCC stdenv (pkgs.wrapCCWith {
+              cc = cc.cc;
+              inherit bintools;
+              libc = fixed-glibc;
+            });
+          };
+          libc = fixed-glibc;
+          inherit bintools;
+        };
+
+        # TODO(@connorbaker): Somehow the above was not enough to get NVCC to work correctly. Even with the patched glibc, it's giving the same error:
+        # /* At some point during the gcc 2.96 development the `malloc' attribute
+        #   for functions was introduced.  We don't want to use it unconditionally
+        #   (although this would be possible) since it generates warnings.  */
+        # #if 0
+        # # define __attribute_malloc__ __attribute__ ((__malloc__))
+        # #else
+        # # define __attribute_malloc__ /* Ignore */
+        # #endif
     in
     # If the current stdenv's compiler version is compatible, or we're on an unsupported host system, use stdenv
     # directly.
@@ -262,7 +302,12 @@ let
     else
       assert assertMsg (maybeHostStdenv != null)
         "backendStdenv: no supported host compiler found (tried ${hostCCName} ${versions.minMajorVersion} to ${versions.maxMajorVersion})";
-      stdenvAdapters.useLibsFrom stdenv maybeHostStdenv;
+        (let 
+          step1 = stdenvAdapters.useLibsFrom stdenv maybeHostStdenv;
+        in
+        pkgs.overrideCC step1 (wrapCCGlibCFix step1.cc)
+        )
+      ;
 in
 # TODO: Consider testing whether we in fact use the newer libstdc++
 # NOTE: The assertion message we get from `extendDerivation` is not at all helpful. Instead, we use assertMsg.
