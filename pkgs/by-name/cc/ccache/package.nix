@@ -112,56 +112,117 @@ stdenv.mkDerivation (finalAttrs: {
     # will end up calling ccache for the given cacheDir
     links =
       { unwrappedCC, extraConfig }:
+      let
+        isClang = unwrappedCC.isClang or false;
+        isGNU = unwrappedCC.isGNU or false;
+      in
       stdenv.mkDerivation {
+        __structuredAttrs = true;
+        strictDeps = true;
+
         pname = "ccache-links";
         inherit (finalAttrs) version;
+
+        knownCompilers =
+          let
+            compilers = [
+              "cc"
+              "c++"
+              "gcc"
+              "g++"
+              "clang"
+              "clang++"
+            ];
+
+            # We always know what the target prefix is.
+            # We wrap compilers with the target prefix optimistically.
+            withTargetPrefix = map (
+              compiler: "${unwrappedCC.stdenv.targetPlatform.config}-${compiler}"
+            ) compilers;
+
+            # Compilers sometimes have their version suffixed, e.g., gcc-14.3.0.
+            withVersion = map (compiler: "${compiler}-${unwrappedCC.version}") compilers;
+
+            # Compilers sometimes have both their target prefix and version suffixed, e.g.,
+            # x86_64-unknown-linux-gnu-gcc-14.3.0.
+            withTargetPrefixAndVersion = map (compiler: "${compiler}-${unwrappedCC.version}") withTargetPrefix;
+          in
+          compilers ++ withVersion ++ withTargetPrefix ++ withTargetPrefixAndVersion;
+
+        compilerType =
+          if isClang then
+            "clang"
+          else if isGNU then
+            "gcc"
+          else
+            throw "unknown compiler type";
+
+        lib = lib.getLib unwrappedCC;
+
+        nativeBuildInputs = [ makeWrapper ];
+
+        buildCommand = ''
+          set -euo pipefail
+
+          wrapWithCCache() {
+            local -r compilerName=''${1:?}
+            local -r compilerPath="${unwrappedCC}/bin/$compilerName"
+
+            if [[ ! -x $compilerPath ]]; then
+              nixDebugLog "Path $compilerPath does not exist or is not executable"
+              return 0
+            fi
+
+            nixLog "removing symlink $out/bin/$compilerName"
+            if [[ ! -L "$out/bin/$compilerName" ]]; then
+              nixErrorLog "if $out/bin/$compilerName exists, it must be a symlink!"
+              exit 1
+            fi
+            rm "$out/bin/$compilerName"
+
+            # Use ccache's path argument to avoid cache-busting due to store path changes.
+            makeWrapper "${lib.getExe finalAttrs.finalPackage}" "$out/bin/$compilerName" \
+              --run ${lib.escapeShellArg extraConfig} \
+              --add-flag "path=${unwrappedCC}/bin" \
+              --add-flag "compiler_check=content" \
+              --add-flag "compiler_type=$compilerType" \
+              --add-flag "compiler=$compilerName" \
+              --add-flag "$compilerName"
+            nixLog "wrapped $compilerPath as $out/bin/$compilerName"
+          }
+
+          makeSymlinks() {
+            mkdir -p "$out"
+
+            nixLog "symlinking top-level files from ${unwrappedCC}"
+            ln --symbolic --verbose "${unwrappedCC}"/* "$out/"
+
+            nixLog "removing symlink: $out/bin"
+            rm "$out/bin"
+
+            nixLog "creating $out/bin"
+            mkdir -p "$out/bin"
+
+            nixLog "symlinking files from ${unwrappedCC}/bin"
+            ln --symbolic --verbose "${unwrappedCC}/bin"/* "$out/bin/"
+          }
+
+          makeWrappers() {
+            nixLog "wrapping binaries with ccache"
+            for knownCompiler in "''${knownCompilers[@]}"; do
+              wrapWithCCache "$knownCompiler"
+            done
+            unset -v knownCompiler
+          }
+
+          makeSymlinks
+          makeWrappers
+        '';
+
         passthru = {
-          isClang = unwrappedCC.isClang or false;
-          isGNU = unwrappedCC.isGNU or false;
+          inherit isClang isGNU;
           isCcache = true;
         };
-        lib = lib.getLib unwrappedCC;
-        nativeBuildInputs = [ makeWrapper ];
-        # Unwrapped clang does not have a targetPrefix because it is multi-target
-        # target is decided with argv0.
-        buildCommand =
-          let
-            targetPrefix =
-              if unwrappedCC.isClang or false then
-                ""
-              else
-                (lib.optionalString (
-                  unwrappedCC ? targetConfig && unwrappedCC.targetConfig != null && unwrappedCC.targetConfig != ""
-                ) "${unwrappedCC.targetConfig}-");
-          in
-          ''
-            mkdir -p $out/bin
-
-            wrap() {
-              local cname="${targetPrefix}$1"
-              if [ -x "${unwrappedCC}/bin/$cname" ]; then
-                makeWrapper ${finalAttrs.finalPackage}/bin/ccache $out/bin/$cname \
-                  --run ${lib.escapeShellArg extraConfig} \
-                  --add-flags ${unwrappedCC}/bin/$cname
-              fi
-            }
-
-            wrap cc
-            wrap c++
-            wrap gcc
-            wrap g++
-            wrap clang
-            wrap clang++
-
-            for executable in $(ls ${unwrappedCC}/bin); do
-              if [ ! -x "$out/bin/$executable" ]; then
-                ln -s ${unwrappedCC}/bin/$executable $out/bin/$executable
-              fi
-            done
-            for file in $(ls ${unwrappedCC} | grep -vw bin); do
-              ln -s ${unwrappedCC}/$file $out/$file
-            done
-          '';
 
         meta = {
           inherit (unwrappedCC.meta) mainProgram;
