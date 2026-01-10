@@ -185,4 +185,5 @@
 
   base = callPackage ./base.nix { };
   hpc = callPackage ./hpc.nix { };
+  vtune = callPackage ./vtune.nix { };
 }

@@ -60,14 +60,14 @@ intel-oneapi.mkIntelOneApi (fa: {
   pname = "intel-oneapi-base-toolkit";
 
   src = fetchurl {
-    url = "https://registrationcenter-download.intel.com/akdlm/IRC_NAS/3b7a16b3-a7b0-460f-be16-de0d64fa6b1e/intel-oneapi-base-toolkit-2025.2.1.44_offline.sh";
-    hash = "sha256-oVURJZG6uZ3YvYefUuqeakbaVR47ZgWduBV6bS6r5Dk=";
+    url = "https://registrationcenter-download.intel.com/akdlm/IRC_NAS/d640da34-77cc-4ab2-8019-ac5592f4ec19/intel-oneapi-base-toolkit-2025.3.0.375_offline.sh";
+    hash = "sha256-mEPSYvK1oG1sbc/Laac8KZNRxu8zoRv/St8Tybolk78=";
   };
 
   versionYear = "2025";
-  versionMajor = "2";
-  versionMinor = "1";
-  versionRel = "44";
+  versionMajor = "3";
+  versionMinor = "0";
+  versionRel = "375";
 
   inherit components;
 
