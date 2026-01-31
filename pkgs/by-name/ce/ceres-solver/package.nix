@@ -1,7 +1,7 @@
 {
   lib,
   stdenv,
-  fetchurl,
+  fetchFromGitHub,
   blas,
   cmake,
   eigen,
@@ -17,13 +17,15 @@
 # gflags is required to run tests
 assert runTests -> gflags != null;
 
-stdenv.mkDerivation rec {
+stdenv.mkDerivation (finalAttrs: {
   pname = "ceres-solver";
-  version = "2.1.0";
+  version = "2.2.0";
 
-  src = fetchurl {
-    url = "http://ceres-solver.org/ceres-solver-${version}.tar.gz";
-    sha256 = "sha256-99dO7N4K7XW/xR7EjJHQH+Fqa/FrzhmHpwcyhnAeL8Y=";
+  src = fetchFromGitHub {
+    owner = "ceres-solver";
+    repo = finalAttrs.pname;
+    tag = finalAttrs.version;
+    hash = "sha256-5SdHXcgwTlkDIUuyOQgD8JlAElk7aEWcFo/nyeOgN/k=";
   };
 
   outputs = [
@@ -44,7 +46,7 @@ stdenv.mkDerivation rec {
   ];
 
   cmakeFlags = [
-    "-DBUILD_SHARED_LIBS=${if enableStatic then "OFF" else "ON"}"
+    (lib.cmakeBool "BUILD_SHARED_LIBS" (!enableStatic))
   ];
 
   # The Basel BUILD file conflicts with the cmake build directory on
@@ -64,4 +66,4 @@ stdenv.mkDerivation rec {
     maintainers = with lib.maintainers; [ giogadi ];
     platforms = lib.platforms.unix;
   };
-}
+})
