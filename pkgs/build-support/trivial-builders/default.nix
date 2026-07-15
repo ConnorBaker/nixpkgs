@@ -4,7 +4,6 @@
   stdenv,
   stdenvNoCC,
   jq,
-  lndir,
   runtimeShell,
   shellcheck-minimal,
 }:
@@ -12,11 +11,9 @@
 let
   inherit (lib)
     optionalAttrs
-    optionalString
     hasPrefix
     warn
     map
-    isList
     foldl'
     ;
 in
@@ -508,6 +505,19 @@ rec {
     Set `failOnMissing = true` to make the build fail if any input package is missing the subdirectory
     (this is the default behavior when not using stripPrefix).
 
+    A collision between different files fails unless `pathStrategies` selects a named strategy
+    for the path or one of its parent directories. The most specific match wins. Strategy names
+    must be nonempty; path keys must be nonempty, normalized relative paths.
+
+    `strategies` maps names to bash snippets. A custom snippet receives `mergeExisting`,
+    `mergeNew`, and `mergeOut` in its environment and must write a regular file to `mergeOut`.
+    The result is executable when either input was executable. Byte-identical regular files are a
+    no-op with the same executable-bit union.
+
+    The built-in `"concatenateWithNewline"` strategy is registered for the standard
+    `nix-support` propagation and setup-hook files. `"keepExisting"` preserves the first entry
+    unchanged. Caller-supplied strategy and path maps are merged over these defaults.
+
     symlinkJoin and linkFarm are similar functions, but they output
     derivations with different structure.
 
@@ -523,81 +533,147 @@ rec {
     other derivations.  A derivation created with linkFarm is often used in CI
     as a easy way to build multiple derivations at once.
   */
-  symlinkJoin = lib.extendMkDerivation {
-    constructDrv = stdenvNoCC.mkDerivation;
-
-    excludeDrvArgNames = [
-      "postBuild"
-      "stripPrefix"
-      "paths"
-      "failOnMissing"
-    ];
-
-    extendDrvArgs =
-      finalAttrs:
-      args@{
-        name ?
-          assert
-            (finalAttrs ? pname && finalAttrs ? version)
-            || throw "symlinkJoin requires either a `name` OR `pname` and `version`";
-          "${finalAttrs.pname}-${finalAttrs.version}",
-        paths,
-        stripPrefix ? "",
-        preferLocalBuild ? true,
-        allowSubstitutes ? false,
-        postBuild ? "",
-        failOnMissing ? stripPrefix == "",
-        ...
-      }:
-      assert
-        (stripPrefix != "" -> (hasPrefix "/" stripPrefix && stripPrefix != "/"))
-        || throw ''
-          stripPrefix must be either an empty string (disable stripping behavior), or relative path prefixed with /.
-
-          Ensure that the path starts with / and specifies path to the subdirectory.
+  symlinkJoin =
+    let
+      # Built-in named bash snippets. Caller definitions are merged over these defaults.
+      defaultStrategies = {
+        concatenateWithNewline = ''
+          cat -- "$mergeExisting" > "$mergeOut"
+          printf '\n' >> "$mergeOut"
+          cat -- "$mergeNew" >> "$mergeOut"
         '';
-      let
-        mapPaths =
-          f:
-          map (
-            path:
-            if path == null then
-              null
-            else if isList path then
-              mapPaths f path
-            else
-              f path
-          );
-      in
-      {
-        enableParallelBuilding = true;
-        inherit name allowSubstitutes preferLocalBuild;
-        passAsFile = [
-          "buildCommand"
-          "paths"
-        ];
-        paths = mapPaths (path: "${path}${stripPrefix}") paths;
-        buildCommand = ''
-          mkdir -p $out
-          if [ -n "''${pathsPath:-}" ] && [ -f "$pathsPath" ]; then
-            mapfile -d " " -t paths < "$pathsPath"
-          fi
-          for i in "''${paths[@]}"; do
-            ${optionalString (!failOnMissing) "if test -d $i; then "}${lndir}/bin/lndir -silent $i $out${
-              optionalString (!failOnMissing) "; fi"
-            }
-          done
-          ${postBuild}
+        # The resolver recognizes a mergeOut symlink back to mergeExisting as selecting that entry.
+        keepExisting = ''
+          ln -s -- "$mergeExisting" "$mergeOut"
         '';
-      }
-      // {
-        ${if !args ? meta then "pos" else null} =
-          if args ? pname then
-            builtins.unsafeGetAttrPos "pname" args
-          else
-            builtins.unsafeGetAttrPos "name" args;
       };
-  };
+      # Keep this in sync with the propagation files written by pkgs/stdenv/generic/setup.sh.
+      defaultPathStrategies = {
+        "nix-support/propagated-build-build-deps" = "concatenateWithNewline";
+        "nix-support/propagated-native-build-inputs" = "concatenateWithNewline";
+        "nix-support/propagated-build-target-deps" = "concatenateWithNewline";
+        "nix-support/propagated-host-host-deps" = "concatenateWithNewline";
+        "nix-support/propagated-build-inputs" = "concatenateWithNewline";
+        "nix-support/propagated-target-target-deps" = "concatenateWithNewline";
+        "nix-support/propagated-user-env-packages" = "concatenateWithNewline";
+        "nix-support/setup-hook" = "concatenateWithNewline";
+      };
+    in
+    lib.extendMkDerivation {
+      constructDrv = stdenvNoCC.mkDerivation;
+
+      excludeDrvArgNames = [
+        "postBuild"
+        "stripPrefix"
+        "paths"
+        "failOnMissing"
+        "strategies"
+        "pathStrategies"
+      ];
+
+      extendDrvArgs =
+        finalAttrs:
+        args@{
+          name ?
+            assert
+              (finalAttrs ? pname && finalAttrs ? version)
+              || throw "symlinkJoin requires either a `name` OR `pname` and `version`";
+            "${finalAttrs.pname}-${finalAttrs.version}",
+          paths,
+          stripPrefix ? "",
+          preferLocalBuild ? true,
+          allowSubstitutes ? false,
+          postBuild ? "",
+          failOnMissing ? stripPrefix == "",
+          # Caller entries override defaults with the same name.
+          strategies ? { },
+          # Maps an exact path or directory prefix to a strategy name.
+          pathStrategies ? { },
+          ...
+        }:
+        assert
+          (stripPrefix != "" -> (hasPrefix "/" stripPrefix && stripPrefix != "/"))
+          || throw ''
+            stripPrefix must be either an empty string (disable stripping behavior), or relative path prefixed with /.
+
+            Ensure that the path starts with / and specifies path to the subdirectory.
+          '';
+        assert
+          (!args ? __structuredAttrs || args.__structuredAttrs)
+          || throw ''
+            symlinkJoin: __structuredAttrs must be true or unset
+          '';
+        let
+          mergedStrategies = defaultStrategies // strategies;
+          mergedPathStrategies = defaultPathStrategies // pathStrategies;
+          invalidStrategyValues = builtins.attrNames (
+            lib.filterAttrs (_: strategy: !builtins.isString strategy) mergedStrategies
+          );
+          hasEmptyStrategyName = builtins.hasAttr "" mergedStrategies;
+          invalidPathStrategyValues = builtins.attrNames (
+            lib.filterAttrs (_: strategyName: !builtins.isString strategyName) mergedPathStrategies
+          );
+          isNormalizedRelativePath =
+            path:
+            path != ""
+            && lib.all (component: component != "" && component != "." && component != "..") (
+              lib.splitString "/" path
+            );
+          invalidPathStrategyPrefixes = builtins.filter (path: !isNormalizedRelativePath path) (
+            builtins.attrNames mergedPathStrategies
+          );
+          unknownPathStrategies = lib.filterAttrs (
+            _: strategyName: !builtins.hasAttr strategyName mergedStrategies
+          ) mergedPathStrategies;
+          formatNames = lib.concatMapStringsSep ", " builtins.toJSON;
+        in
+        assert builtins.isAttrs strategies || throw "symlinkJoin: strategies must be an attribute set";
+        assert
+          builtins.isAttrs pathStrategies || throw "symlinkJoin: pathStrategies must be an attribute set";
+        assert builtins.isBool failOnMissing || throw "symlinkJoin: failOnMissing must be a boolean";
+        assert
+          invalidStrategyValues == [ ]
+          || throw "symlinkJoin: every strategy must be a string; invalid entries: ${formatNames invalidStrategyValues}";
+        assert !hasEmptyStrategyName || throw "symlinkJoin: strategy names must be nonempty";
+        assert
+          invalidPathStrategyValues == [ ]
+          || throw "symlinkJoin: every pathStrategies value must be a strategy name string; invalid entries: ${formatNames invalidPathStrategyValues}";
+        assert
+          invalidPathStrategyPrefixes == [ ]
+          || throw "symlinkJoin: pathStrategies keys must be normalized relative paths; invalid entries: ${formatNames invalidPathStrategyPrefixes}";
+        assert
+          unknownPathStrategies == { }
+          || throw "symlinkJoin: pathStrategies refers to unknown strategies: ${
+            lib.concatStringsSep ", " (
+              lib.mapAttrsToList (
+                path: strategyName: "${builtins.toJSON path} -> ${builtins.toJSON strategyName}"
+              ) unknownPathStrategies
+            )
+          }";
+        {
+          __structuredAttrs = true;
+          inherit
+            name
+            allowSubstitutes
+            preferLocalBuild
+            failOnMissing
+            ;
+          paths = map (path: "${path}${stripPrefix}") (
+            builtins.filter (path: path != null) (lib.flatten paths)
+          );
+          # Structured attrs converts these maps to associative arrays for the sourced script.
+          strategies = mergedStrategies;
+          pathStrategies = mergedPathStrategies;
+          buildCommand = ''
+            source ${./symlinkJoin.bash}
+            symlinkJoin "$out" "''${paths[@]}"
+            ${postBuild}
+          '';
+          ${if !args ? meta then "pos" else null} = builtins.unsafeGetAttrPos (
+            if args ? pname then "pname" else "name"
+          ) args;
+        };
+    };
 
   # TODO: move linkFarm docs to the Nixpkgs manual
   /*

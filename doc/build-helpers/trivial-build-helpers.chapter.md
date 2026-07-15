@@ -856,6 +856,32 @@ This creates a derivation with a directory structure like the following:
 ...
 ```
 
+If two or more `paths` provide different files at the same relative path, `symlinkJoin` fails and
+names the path. Byte-identical regular files are a no-op; the result remains executable if any
+contributor was executable.
+
+To resolve a collision, `pathStrategies` maps a nonempty, normalized relative path or directory
+prefix to a nonempty name in `strategies`; the most specific matching prefix wins. Each custom
+strategy is a bash snippet that reads `$mergeExisting` and `$mergeNew` and must write a regular,
+non-symlink file to `$mergeOut`. Strategy failure or an invalid output fails the join.
+
+The built-in `"concatenateWithNewline"` strategy is registered for the standard `nix-support`
+propagation and setup-hook files. The built-in `"keepExisting"` strategy preserves the first entry,
+including its type and mode. Caller-supplied maps are merged over these defaults. For example:
+
+```nix
+symlinkJoin {
+  name = "merged";
+  paths = [ pkgA pkgB ];
+  strategies.withSeparator = ''
+    cat -- "$mergeExisting" > "$mergeOut"
+    printf '\n---\n' >> "$mergeOut"
+    cat -- "$mergeNew" >> "$mergeOut"
+  '';
+  pathStrategies."etc/my-config" = "withSeparator";
+}
+```
+
 ## `writeClosure` {#trivial-builder-writeClosure}
 
 Given a list of [store paths](https://nixos.org/manual/nix/stable/glossary#gloss-store-path) (or string-like expressions coercible to store paths), write their collective [closure](https://nixos.org/manual/nix/stable/glossary#gloss-closure) to a text file.
