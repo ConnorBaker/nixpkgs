@@ -71,6 +71,33 @@
     `dontDefaultAfterCudaMajorMinorVersion`
 
     : The CUDA version after which to exclude this capability from the list of default capabilities we build.
+
+    ## What this table does not record
+
+    Stated because each of these has an adjacent field which looks like it answers the question and
+    does not, so a consumer which assumes otherwise gets a plausible wrong answer rather than an error.
+
+    - **Feature-set containment between baseline capabilities.** Nothing here says that one
+      capability's features are a superset of another's, and the version ordering of the keys does not
+      imply it. The Jetson entries are where assuming it goes wrong soonest: `isJetson` records that
+      `7.2` and `8.7` are Jetson capabilities, and nothing relates their features to `7.5` and `8.6`.
+      Recording this would mean measuring it; it cannot be inferred from the keys.
+
+    - **Which physical GPUs a capability covers.** The comment above each entry names an example part
+      and is prose, not data.
+
+    Two things which look like they belong on this list are in fact derivable from the key, and are
+    derived by `_cuda.lib.getCudaSystemFeatures` rather than stored:
+
+    - A **family** is a major compute capability version, so `lib.versions.major` identifies it and
+      `sm_100f` runs on every 10.x at or above 10.0. Do not reach for `archName` instead: it is the
+      microarchitecture, and it groups everything from `10.0` to `12.1` as "Blackwell", which spans
+      two families.
+
+    - **Binary compatibility** of a cubin holds within a major capability version at a minor version
+      at least as high, and needs PTX and a JIT beyond that. It is therefore the family rule, and not
+      the version ordering of these keys -- which answers a different question, "does this GPU meet a
+      stated minimum".
   */
   cudaCapabilityToInfo =
     lib.mapAttrs

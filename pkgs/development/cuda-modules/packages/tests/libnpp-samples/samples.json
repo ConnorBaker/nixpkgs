@@ -1,0 +1,9 @@
+{
+  "samples": {
+    "NPP/batchedLabelMarkersAndCompression": ["batchedLabelMarkersAndCompression"],
+    "NPP/distanceTransform": ["distanceTransform"],
+    "NPP/findContour": ["findContour"],
+    "NPP/watershedSegmentation": ["watershedSegmentation"]
+  },
+  "subtrees": ["NPP"]
+}

@@ -1,0 +1,7 @@
+{
+  "samples": {
+    "cuSPARSELt/matmul": ["matmul_example", "matmul_example_static"],
+    "cuSPARSELt/matmul_advanced": ["matmul_advanced_example", "matmul_advanced_example_static"]
+  },
+  "subtrees": ["cuSPARSELt"]
+}

@@ -35,6 +35,9 @@
   "cuda": [
     "index.html#cuda"
   ],
+  "cuda-component-samples": [
+    "index.html#cuda-component-samples"
+  ],
   "cuda-configuring-nixpkgs-for-cuda": [
     "index.html#cuda-configuring-nixpkgs-for-cuda"
   ],
@@ -43,6 +46,9 @@
   ],
   "cuda-docker-podman": [
     "index.html#cuda-docker-podman"
+  ],
+  "cuda-enumerating-samples": [
+    "index.html#cuda-enumerating-samples"
   ],
   "cuda-extending-cuda-package-sets": [
     "index.html#cuda-extending-cuda-package-sets"
@@ -63,6 +69,12 @@
   ],
   "cuda-passthru-tests": [
     "index.html#cuda-passthru-tests"
+  ],
+  "cuda-running-capability-gated-tests": [
+    "index.html#cuda-running-capability-gated-tests"
+  ],
+  "cuda-sample-requirements": [
+    "index.html#cuda-sample-requirements"
   ],
   "cuda-specifying-what-devices-to-expose-to-the-container": [
     "index.html#cuda-specifying-what-devices-to-expose-to-the-container",

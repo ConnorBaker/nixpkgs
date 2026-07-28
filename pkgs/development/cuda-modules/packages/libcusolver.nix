@@ -5,6 +5,7 @@
   libcublas,
   libcusparse,
   libnvjitlink,
+  tests,
 }:
 buildRedist {
   redistName = "cuda";
@@ -26,6 +27,10 @@ buildRedist {
     ++ lib.optionals (cudaAtLeast "12.0") [ libnvjitlink ]
     # Dependency from 12.1 and on
     ++ lib.optionals (cudaAtLeast "12.1") [ (lib.getLib libcusparse) ];
+
+  # Defined in `packages/tests/libcusolver-samples`, not here: a redistributable is unpacked rather
+  # than compiled, so nothing which exercises it is part of building it.
+  passthru.tests = tests.libcusolver-samples;
 
   meta = {
     description = "Collection of dense and sparse direct linear solvers and Eigen solvers";

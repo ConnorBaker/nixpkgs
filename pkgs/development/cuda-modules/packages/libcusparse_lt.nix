@@ -4,6 +4,7 @@
   cuda_cudart,
   lib,
   libcublas,
+  tests,
 }:
 buildRedist (finalAttrs: {
   redistName = "cusparselt";
@@ -22,6 +23,10 @@ buildRedist (finalAttrs: {
   ]
   # For some reason, the 1.4.x release of cusparselt requires the cudart library.
   ++ lib.optionals (lib.hasPrefix "1.4" finalAttrs.version) [ (lib.getLib cuda_cudart) ];
+
+  # Defined in `packages/tests/libcusparse_lt-samples`, not here: a redistributable is unpacked
+  # rather than compiled, so nothing which exercises it is part of building it.
+  passthru.tests = tests.libcusparse_lt-samples;
 
   meta = {
     description = "High-performance CUDA library dedicated to general matrix-matrix operations in which at least one operand is a structured sparse matrix with 50% sparsity ratio";

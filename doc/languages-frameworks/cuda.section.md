@@ -368,3 +368,139 @@ Tests which always require CUDA should be placed in `passthru.tests.cuda`, while
 :::
 
 This is useful for tests which are deterministic (e.g., checking exit codes) and which can be provided with all necessary resources in the sandbox.
+
+#### Component samples {#cuda-component-samples}
+
+Redistributable components are unpacked rather than compiled, so the programs which exercise them cannot be built as part of the component itself. They are defined in `pkgs/development/cuda-modules/packages/tests/<component>-samples`, taking the component as an ordinary `callPackage` argument, and appear as `cudaPackages.tests.<component>-samples`. Eight components have samples: `libcublas`, `libcudss`, `libcufft`, `libcurand`, `libcusolver`, `libcusparse`, `libnpp` and `libnvjpeg`.
+
+Most such programs come from [CUDALibrarySamples](https://github.com/NVIDIA/CUDALibrarySamples), which provides one self-contained CMake project per example rather than a single build covering them all. `buildSample` builds one such project; `mkSamples` calls it once per entry in the component's checked-in manifest, which lives in the same directory:
+
+```nix
+# pkgs/development/cuda-modules/packages/tests/libcublas-samples/package.nix
+{
+  cuda_cudart,
+  lib,
+  libcublas,
+  mkSamples,
+}:
+mkSamples {
+  component = libcublas;
+  manifest = lib.importJSON ./samples.json;
+  manifestPath = ./samples.json;
+  buildInputs = [ cuda_cudart ];
+}
+```
+
+Build one derivation per project rather than one per component: projects build in parallel, each caches on its own, and a project which stops compiling takes down only its own tests.
+
+`cudaPackages.tests.<component>-samples` is a `recurseIntoAttrs` set whose leaves are the sandboxed tests, one per sample executable, keyed `<project>-<program>` -- for example `cudaPackages.tests.libcublas-samples."cuBLAS-Level-3-gemm-cublas_gemm_example"`. Keying on the executable alone would silently lose tests: a project may build several (`cuBLAS/Level-1/dot` builds `cublas_dot_example` and `cublas_dotc_example`) and two projects may build executables of the same name, which cuFFT does twice over between `cuFFT/lto_callback_window_1d` and `cuFFT/lto_ea`.
+
+Each test is built from two further derivations, which hang off its `passthru` rather than sitting beside it, so that everything found by recursing into the set is a check rather than an ingredient of one:
+
+- the test itself runs the executable inside the sandbox;
+- its `passthru.tester` is that executable -- the sample program and its arguments wrapped into a script registered as `meta.mainProgram` -- so the same run can be reproduced outside the sandbox, under `nixGL` on a non-NixOS host;
+- the tester's `passthru.sample` is the compiled project.
+
+Each of the three can fail, be cached and be rebuilt on its own; changing an invocation does not force a recompile. The manifest drift check described in [Enumerating samples](#cuda-enumerating-samples) is a leaf of the same set, under the reserved name `manifest` -- it is a check on the manifest which lists these very projects -- so whatever builds the set builds it too.
+
+The component itself carries the whole set, so that tooling which builds the tests of a changed package finds them:
+
+```nix
+{ passthru.tests = tests.libcublas-samples; }
+```
+
+::: {.caution}
+Do not attach these to the component's `passthru` under a name which collides with one of its outputs. Redistributable outputs are determined by the upstream archive rather than by us, and several components -- `cuda_cupti` among them -- ship a `samples` output which a `passthru.samples` would silently shadow.
+:::
+
+::: {.note}
+Testers and tests for a redistributable component are **not** nested under a `cuda` attribute. That convention exists to separate CUDA-specific tests from other backends on a package which supports several, and to stop an unfree member from discarding free siblings under OfBorg. Neither applies to a component which is itself part of CUDA: every test of one is CUDA-specific and equally unfree.
+:::
+
+These tests belong to the CUDA package set which owns them. They are reachable at `cudaPackages.tests.<component>-samples.<project>-<program>` within whichever CUDA package set you are using, and `cudaPackages.tests` is traversable, so walking it reaches every component's samples. There is no separate top-level enumeration, and none should be added: a hand-written cross-product over versioned package set *names* cannot track the sets which actually exist, because several of those names alias the same set while other live sets have no alias at all, which makes such a list redundant and incomplete at the same time.
+
+Two aggregates give the parts which need no GPU a single name to build: `cudaPackages.tests.sample-manifests` collects the eight manifest drift checks, and `cudaPackages.tests.samples-built` compiles every available sample, reaching the samples through the tests which run them. Both name the components they cover rather than discovering them by filtering `cudaPackages`. Filtering forces every attribute of the package set, deprecated aliases included, to ask a question about eight of them, and it reports success on an empty result if the attribute it filters on is ever renamed. Adding a component means adding a line to each, alongside the new directory under `packages/tests`.
+
+#### Enumerating samples {#cuda-enumerating-samples}
+
+Every sample project in the component's subtrees is packaged, not a hand-picked subset. The eight manifests describe 177 projects between them -- 79 under `libcublas`, 7 `libcudss`, 9 `libcufft`, 9 `libcurand`, 30 `libcusolver`, 34 `libcusparse`, 4 `libnpp` and 5 `libnvjpeg` -- which build 218 executables.
+
+Since CUDALibrarySamples has no index and reading the checkout at evaluation time would be import-from-derivation, the set of projects is recovered by `buildSample/manifest.py` and checked in beside the sample package. `generate` writes the new manifest to standard output, and `--merge` reads the old one, so redirect to a new file and move it into place rather than redirecting over the file being read:
+
+```ShellSession
+$ manifest.py generate --merge samples.json <checkout> cuBLAS cuBLASLt > samples.json.new
+$ mv samples.json.new samples.json
+```
+
+Which projects exist is enumerated exactly, by walking the subtrees for `CMakeLists.txt`. Which executables each project builds is recovered by parsing CMake, which is a heuristic -- so the parse is never what certifies correctness. Four checks are, and none of them needs a GPU:
+
+- `buildSample` installs the declared `programs` by name and fails if one is missing, catching an upstream rename or removal.
+- `buildSample` also fails on any executable the project built that `programs` does not declare, catching an upstream addition inside a known project. Between them these two make CMake itself, rather than the parser, the authority on a project's executables.
+- The manifest drift check rescans the subtrees -- passed to it independently, so a manifest cannot narrow its own scope -- and compares them against the manifest, catching a project added or removed upstream. It reports how many projects it verified and fails if that number is zero, since a check which happens to verify nothing would otherwise pass.
+- `cudaPackages.tests.samples-built` compiles every available sample, so the checks above actually run. A guarantee which only holds for attributes nobody builds is not a guarantee.
+
+Availability is not total, and the docs should not claim it is. On the default package set 174 of the 177 projects build; three are marked broken with a measured `meta.problems` entry rather than being dropped from the manifest -- `cuDSS/simple_batch`, `cuFFT/lto_ea` and `NPP/watershedSegmentation` -- which leaves 213 tests. Samples are selected on `meta.available` rather than built wholesale, and the count of what remains is asserted, so a mistake which made everything unavailable empties the aggregate loudly instead of shrinking it quietly.
+
+A project whose targets are built in a `foreach` over a configure-time list cannot be named by any static parse. Those are marked `"handDeclared": true` in the manifest with their `programs` filled in by hand; `check` reports them separately and excludes them from the verified count rather than counting them as confirmed, and `--merge` will carry a hand-written list forward only for a project which is still unparseable. A project which stops being parseable therefore comes back empty and fails generation, instead of silently inheriting its old answer. One project is hand-declared today: `cuDSS/simple_mgmn_mode`, which builds one executable per communication backend.
+
+#### Sample requirements {#cuda-sample-requirements}
+
+`minCudaVersion`, `maxCudaVersion` and `minCudaCapability` express what a sample needs. A sample reports a `meta.problems` entry -- naming the requirement and the values which failed to meet it -- when the package set's CUDA is too old (`cudaVersionTooOld`) or too new (`cudaVersionTooNew`) or no configured capability qualifies (`noUsableCudaCapability`), and it is compiled for exactly the capabilities which do qualify.
+
+`mkSamples` takes `sampleArgs`, a table from `sampleRoot` to extra arguments for that one sample -- requirements, but equally extra `buildInputs`, `cmakeFlags` or a `postPatch`:
+
+```nix
+{
+  sampleArgs = {
+    "cuBLASLt/LtFp8Matmul".minCudaCapability = "8.9";
+    "NPP/watershedSegmentation".maxCudaVersion = "12.6";
+  };
+}
+```
+
+Its keys are checked against the manifest, so a key naming no project fails evaluation instead of being discarded in silence. That check is why the table is preferred: a mistyped key carrying a `minCudaCapability` would otherwise leave the sample building happily while its test quietly lost the `cuda-sm-<capability>` requirement which keeps it off a GPU that cannot run it.
+
+For a rule which applies to a family of projects rather than to one -- every cuBLASLt sample needs CUDA 12.8 -- `mkSamples` also takes `sampleArgsFor`, a function of `sampleRoot`. It has no key to check against the manifest, so use it only where a table would mean repeating the same value across a subtree:
+
+```nix
+{
+  sampleArgsFor =
+    sampleRoot: lib.optionalAttrs (lib.hasPrefix "cuBLASLt/" sampleRoot) { minCudaVersion = "12.8"; };
+}
+```
+
+Key both on `sampleRoot` rather than on the manifest key, so that a change to how keys are derived cannot silently detach a requirement from its sample. Arguments merge rather than replace -- lists concatenate, attribute sets merge recursively, `pre*`/`post*` hooks append, and anything else is an error -- so neither a family rule nor a per-sample override can silently drop the `buildInputs` or patches every sample depends on, or displace the other. Prefer a per-sample override to a component-wide one: a linker flag added for one sample which needs it should not apply to the other thirty-three which do not.
+
+::: {.important}
+Requirements are curated by hand and deliberately excluded from the generated manifest, because upstream does not state them reliably: most READMEs say "All GPUs supported by CUDA Toolkit", the ones which enumerate architectures are stale (listing SM 3.0 while omitting SM 9.0 and later), cuBLASLt ships no READMEs at all, and no sample checks its requirements at runtime. Establish them by building against the oldest supported package set and by running on real hardware -- not by reading upstream's claims, and not from memory.
+:::
+
+Compiling for a capability is verified rather than assumed. Some of the per-library example helpers -- `add_cublas_example` and its cuRAND and cuSOLVER counterparts -- set `CUDA_ARCHITECTURES OFF` on each target they define, which silently discards `CMAKE_CUDA_ARCHITECTURES`; `buildSample` patches that out where it finds it and its `installCheckPhase` reads the architectures back out of the built binaries with `cuobjdump`. The check is exact in both directions: the SASS present must be exactly the set requested, and a capability present only as PTX is a failure rather than a pass, since these binaries are run on real GPUs by the derived tests and JIT compilation is not a substitute. Samples which embed no device code at all are skipped.
+
+#### Running capability-gated tests {#cuda-running-capability-gated-tests}
+
+Every sample test requires the `cuda` system feature, and the builder has to expose the driver and the device nodes to the sandbox. On NixOS that is `programs.nix-required-mounts.presets.nvidia-gpu.enable`, which also adds `cuda` to `nix.settings.system-features`.
+
+A test derived from a sample with a `minCudaCapability` requires a capability feature in addition -- `cuda-sm-89` for `"8.9"`, the dot dropped. Building for a capability and running on it are different questions: the package set compiles for every configured capability, so a Blackwell-only sample builds happily on a machine which cannot execute it.
+
+System features match exactly, so a minimum cannot be expressed by the requirement alone: a builder must advertise every capability it is able to run. Which capabilities those are depends on the flavour of each, and there are three. A baseline capability such as `8.9` is advertised by every GPU at or above it. An architecture-specific one such as `9.0a` runs on SM 9.0 and on nothing else, not even on a later minor version of the same family, so it is advertised by SM 9.0 alone. A family-specific one such as `10.0f` -- a family being a major compute capability version -- is advertised by every GPU in the 10.x family at or above 10.0, which is to say by SM 10.0, 10.1 and 10.3, but by no 11.x or 12.x GPU. The resulting list is long: an RTX 4090 at SM 8.9 advertises thirteen features, from `cuda-sm-35` up to `cuda-sm-89`. Derive it with the helper rather than writing it out by hand:
+
+```nix
+{
+  nix.settings.system-features = [
+    "big-parallel"
+    "cuda"
+  ]
+  ++ pkgs._cuda.lib.getCudaSystemFeatures [ "8.9" ];
+}
+```
+
+The argument is a list, for a machine with more than one kind of GPU, and the result is the union of the closures rather than the closure of the most capable: a host with both a 9.0 and a 10.0 can run `sm_90a`, which a host with only the 10.0 cannot. It throws on a capability Nixpkgs does not know, and on a suffixed one -- no GPU *is* `9.0a`, that names code an SM 9.0 GPU can run -- so a typo or a category error fails evaluation rather than producing a builder which is quietly never chosen.
+
+The requirement and the advertisement are both named by `_cuda.lib.mkCudaSystemFeature`, and must be: Nix matches system features by exact string, and two spellings which drift apart do not fail the build. They leave every gated test unschedulable, which is indistinguishable from owning no builder that can run it. `cudaPackages.tests.cuda-system-features` checks the closure's properties for the same reason.
+
+What the closure deliberately is not is binary compatibility. A cubin loads within a major capability version at a minor version at least as high, and needs PTX and a JIT beyond that; this closure instead answers whether a GPU meets a stated minimum, which is what a sample's `minCudaCapability` is and what a builder is chosen by. The code the builder runs was compiled for its own capabilities by the package set, so the cubin question does not arise. `getCudaSystemFeatures` documents this alongside the one thing `_cuda.db` genuinely does not record: whether one baseline capability's features contain another's, which the version ordering does not imply and which the Jetson entries are the first to break.
+
+Without this, capability-gated tests are refused a builder rather than failing obscurely partway through.
+
+Of the 213 tests available on the default package set, 199 pass on an RTX 4090 builder configured as above. The remaining 14 fail for reasons outside this machinery and have not yet been expressed as requirements: seven want input data the sample does not ship, two want a source path present at run time, two want a multi-rank launcher, and three want a `cuda-sm-*` feature above what an RTX 4090 can advertise.

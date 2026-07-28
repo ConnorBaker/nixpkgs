@@ -1,4 +1,4 @@
-{ buildRedist }:
+{ buildRedist, tests }:
 buildRedist {
   redistName = "nppplus";
   pname = "libnpp_plus";
@@ -11,6 +11,10 @@ buildRedist {
     "static"
     "stubs"
   ];
+
+  # Defined in `packages/tests/libnpp_plus-samples`, not here: a redistributable is unpacked rather
+  # than compiled, so nothing which exercises it is part of building it.
+  passthru.tests = tests.libnpp_plus-samples;
 
   meta = {
     description = "C++ support for interfacing with the NVIDIA Performance Primitives (NPP) library";

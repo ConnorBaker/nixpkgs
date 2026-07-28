@@ -4,6 +4,7 @@
   libcublas,
   libnvshmem,
   nccl,
+  tests,
 }:
 buildRedist {
   redistName = "cublasmp";
@@ -27,6 +28,10 @@ buildRedist {
   autoPatchelfIgnoreMissingDeps = [
     "libcuda.so.1"
   ];
+
+  # Defined in `packages/tests/libcublasmp-samples`, not here: a redistributable is unpacked rather
+  # than compiled, so nothing which exercises it is part of building it.
+  passthru.tests = tests.libcublasmp-samples;
 
   meta = {
     description = "High-performance, multi-process, GPU-accelerated library for distributed basic dense linear algebra";

@@ -1,0 +1,7 @@
+{
+  "samples": {
+    "nvCOMP/benchmarks": ["benchmark_ans_chunked", "benchmark_bitcomp_chunked", "benchmark_cascaded_chunked", "benchmark_deflate_chunked", "benchmark_gdeflate_chunked", "benchmark_hlif", "benchmark_lz4_chunked", "benchmark_snappy_chunked", "benchmark_zstd_chunked"],
+    "nvCOMP/examples": ["deflate_cpu_compression", "deflate_cpu_decompression", "gdeflate_cpu_compression", "gdeflate_cpu_decompression", "gzip_gpu_decompression", "high_level_quickstart_example", "low_level_quickstart_example", "lz4_cpu_compression", "lz4_cpu_decompression", "nvcomp_crc32"]
+  },
+  "subtrees": ["nvCOMP"]
+}

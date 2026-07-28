@@ -1,4 +1,4 @@
-{ buildRedist }:
+{ buildRedist, tests }:
 buildRedist {
   redistName = "nvjpeg2000";
   pname = "libnvjpeg_2k";
@@ -10,6 +10,10 @@ buildRedist {
     "lib"
     "static"
   ];
+
+  # Defined in `packages/tests/libnvjpeg_2k-samples`, not here: a redistributable is unpacked rather
+  # than compiled, so nothing which exercises it is part of building it.
+  passthru.tests = tests.libnvjpeg_2k-samples;
 
   meta = {
     description = "Accelerates the decoding and encoding of JPEG2000 images on NVIDIA GPUs";

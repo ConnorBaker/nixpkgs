@@ -169,10 +169,63 @@ let
           isJetsonBuild = finalCudaPackages.backendStdenv.hasJetsonCudaCapability;
         };
     }
-    // packagesFromDirectoryRecursive {
-      inherit (finalCudaPackages) callPackage;
-      directory = ./packages;
-    };
+    // (
+      let
+        packages = packagesFromDirectoryRecursive {
+          inherit (finalCudaPackages) callPackage;
+          directory = ./packages;
+        };
+      in
+      packages
+      // {
+        # Tests get a scope of their own rather than being callPackaged from this one.
+        #
+        # `packagesFromDirectoryRecursive` resolves every file's arguments against the scope it is
+        # given, however deep the file sits, so a helper under `packages/tests` would have had to be
+        # a root attribute of the package set for `tests/<component>-samples/package.nix` to name it.
+        # That is how `mkSamples`, `mkTester`, `buildSample` and the rest came to sit beside
+        # `libcublas` in `cudaPackages`, where they are not packages and have no business being: a
+        # user completing `cudaPackages.` should not be offered the machinery that builds its tests.
+        #
+        # A child scope over `tests/support` puts them where they are used. `newScope` is inherited
+        # rather than rebuilt so that splicing survives -- `buildSample` compiles rather than
+        # unpacks, and reading `cuda_nvcc` or `cuda_cuobjdump` out of an unspliced scope takes the
+        # host-platform build of each, which under `pkgsCross` means a sample whose native build
+        # inputs are an nvcc the builder cannot execute. Components still resolve, from the parent.
+        #
+        # The scope holds the support files and NOT the tests, which is load-bearing rather than
+        # tidiness: a test directory is named after the thing it tests, so a scope containing the
+        # tests would shadow the packages of the same name. `tests/cudnn-frontend` would answer for
+        # `cudnn-frontend`, and `legacy_samples.nix` asking for the package it exercises would be
+        # handed its own sibling group instead -- an infinite recursion, which is exactly what
+        # happened when this was first written over the whole directory.
+        #
+        # `recurseIntoAttrs` because `packagesFromDirectoryRecursive` gives a directory a plain
+        # attribute set, which nothing traverses: `nix-env` and Hydra descend only into attribute
+        # sets marked this way, so every test each package set defines was invisible to both. Marking
+        # it here means a package set carries and exposes its own tests, with no list of package-set
+        # attribute names maintained somewhere else -- such a list cannot help but be redundant and
+        # incomplete at once, since `cudaPackages`, `cudaPackages_12` and `cudaPackages_12_9` are one
+        # package set under three names while `cudaPackages_13_1` and `cudaPackages_13_3` are two
+        # more which no such list mentioned.
+        tests =
+          let
+            support = lib.makeScope finalCudaPackages.newScope (
+              finalSupport:
+              packagesFromDirectoryRecursive {
+                inherit (finalSupport) callPackage;
+                directory = ./packages/tests/support;
+              }
+            );
+          in
+          lib.recurseIntoAttrs (
+            removeAttrs (packagesFromDirectoryRecursive {
+              inherit (support) callPackage;
+              directory = ./packages/tests;
+            }) [ "support" ]
+          );
+      }
+    );
 
   composedExtensions = composeManyExtensions (
     optionals config.allowAliases [

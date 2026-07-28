@@ -1,0 +1,11 @@
+{
+  "samples": {
+    "nvJPEG/Image-Resize": ["imageResize"],
+    "nvJPEG/Image-Resize-WaterMark": ["imageResizeWatermark"],
+    "nvJPEG/nvJPEG-Decoder": ["nvjpegDecoder"],
+    "nvJPEG/nvJPEG-Decoder-Backend-ROI": ["nvJPEGROIDecode"],
+    "nvJPEG/nvJPEG-Decoder-MultipleInstances": ["nvJPEGDecMultipleInstances"],
+    "nvJPEG/nvJPEG-Encoder-MultipleInstances": ["nvJPEGEncMultipleInstances"]
+  },
+  "subtrees": ["nvJPEG"]
+}
