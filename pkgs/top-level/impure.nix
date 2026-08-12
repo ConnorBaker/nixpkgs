@@ -52,7 +52,7 @@ in
 assert args ? localSystem -> !(args ? system);
 assert args ? system -> !(args ? localSystem);
 
-import ./. (
+import ./memoized.nix (
   removeAttrs args [ "system" ]
   // {
     inherit config overlays localSystem;
