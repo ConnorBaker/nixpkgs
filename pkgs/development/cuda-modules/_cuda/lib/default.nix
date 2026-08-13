@@ -16,6 +16,8 @@
     _cudaCapabilityIsSupported
     _mkCudaVariant
     allowUnfreeCudaPredicate
+    getCudaSystemFeatures
+    mkCudaSystemFeature
     ;
 
   # See ./licenses.nix for documentation.
