@@ -10,6 +10,7 @@
 # rather than compiled, so nothing can be built inside it -- and separately from the testers which
 # run them, so that changing an invocation does not force a recompile.
 {
+  autoAddDriverRunpath,
   backendStdenv,
   cmake,
   cuda_cuobjdump,
@@ -230,6 +231,24 @@ backendStdenv.mkDerivation (
       cuda_nvcc
       # Used to prove the binaries really were built for the requested capabilities.
       cuda_cuobjdump
+      # Puts the driver directory on each binary's runpath, without which none of these run.
+      #
+      # A sample links `libcudart` statically and never names `libcuda` -- `patchelf --print-needed`
+      # lists `libnvcomp.so.5` and nothing else for `high_level_quickstart_example` -- so the CUDA
+      # runtime opens the driver by `dlopen("libcuda.so.1")` at first use. Nothing on the runpath
+      # answers that: `removeStubsFromRunpath` has by then taken out the stub the link used, which is
+      # right, but it leaves no real one in its place. The `nix-required-mounts` preset does mount
+      # `/run/opengl-driver` into the sandbox, and that is not enough on its own, because a mounted
+      # directory nothing searches is not on any search path.
+      #
+      # The failure this produces says nothing about `dlopen`. The first CUDA call returns 35,
+      # `cudaErrorInsufficientDriver`, so what a sample prints is
+      #   API call failure "cudaMalloc(&device_input_ptrs, input_buffer_len)" with 35 at
+      #     nvCOMP/examples/high_level_quickstart_example.cpp:587
+      # on a machine whose driver is far newer than the runtime needs -- measured on an RTX 4090
+      # running 610.43.02 against CUDA 13.3, where the driver is not insufficient for anything. It
+      # reads as a hardware or driver problem and is neither.
+      autoAddDriverRunpath
     ]
     ++ nativeBuildInputs;
 
