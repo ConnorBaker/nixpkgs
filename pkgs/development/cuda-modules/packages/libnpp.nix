@@ -1,4 +1,7 @@
-{ buildRedist }:
+{
+  buildRedist,
+  tests,
+}:
 buildRedist {
   redistName = "cuda";
   pname = "libnpp";
@@ -11,6 +14,10 @@ buildRedist {
     "static"
     "stubs"
   ];
+
+  # Defined in `packages/tests/libnpp-samples`, not here: a redistributable is unpacked rather
+  # than compiled, so nothing which exercises it is part of building it.
+  passthru.tests = tests.libnpp-samples;
 
   meta = {
     description = "Library of primitives for image and signal processing";

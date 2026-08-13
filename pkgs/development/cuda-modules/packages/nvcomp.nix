@@ -1,4 +1,4 @@
-{ buildRedist }:
+{ buildRedist, tests }:
 buildRedist {
   redistName = "nvcomp";
   pname = "nvcomp";
@@ -10,6 +10,10 @@ buildRedist {
     "lib"
     "static"
   ];
+
+  # Defined in `packages/tests/nvcomp-samples`, not here: a redistributable is unpacked rather than
+  # compiled, so nothing which exercises it is part of building it.
+  passthru.tests = tests.nvcomp-samples;
 
   meta = {
     description = "High-speed data compression and decompression library optimized for NVIDIA GPUs";

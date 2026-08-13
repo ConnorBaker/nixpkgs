@@ -16,5 +16,20 @@
 # as under `tests`, which is one extra line in the same directory.
 { }:
 [
+  "libcublas-samples"
+  "libcublasmp-samples"
+  "libcudss-samples"
   "libcufft-samples"
+  "libcurand-samples"
+  "libcusolver-samples"
+  "libcusolvermp-samples"
+  "libcusparse-samples"
+  "libcusparse_lt-samples"
+  "libcutensor-samples"
+  "libnpp-samples"
+  "libnpp_plus-samples"
+  "libnvjpeg-samples"
+  "libnvjpeg_2k-samples"
+  "libnvtiff-samples"
+  "nvcomp-samples"
 ]

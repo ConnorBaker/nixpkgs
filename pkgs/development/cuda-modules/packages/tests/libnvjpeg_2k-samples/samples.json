@@ -1,0 +1,9 @@
+{
+  "samples": {
+    "nvJPEG2000/nvJPEG2000-Decoder": ["nvjpeg2000_decode_sample"],
+    "nvJPEG2000/nvJPEG2000-Decoder-Pipelined": ["nvjpeg2k_dec_pipelined"],
+    "nvJPEG2000/nvJPEG2000-Decoder-Tile-Partial": ["nvj2k_decode_tile_partial"],
+    "nvJPEG2000/nvJPEG2000-Encoder": ["nvjpeg2k_encode"]
+  },
+  "subtrees": ["nvJPEG2000"]
+}

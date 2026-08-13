@@ -2,6 +2,7 @@
   buildRedist,
   cuda_nvrtc,
   lib,
+  tests,
 }:
 buildRedist (finalAttrs: {
   redistName = "cuda";
@@ -20,6 +21,10 @@ buildRedist (finalAttrs: {
     "static"
     "stubs"
   ];
+
+  # Defined in `packages/tests/libcublas-samples`, not here: a redistributable is unpacked rather
+  # than compiled, so nothing which exercises it is part of building it.
+  passthru.tests = tests.libcublas-samples;
 
   meta = {
     description = "CUDA Basic Linear Algebra Subroutine library";

@@ -1,0 +1,25 @@
+{
+  "samples": {
+    "cuDSS/simple": ["simple_example"],
+    "cuDSS/simple_batch": ["simple_batch_example"],
+    "cuDSS/simple_batch_sparse_matrix_helpers": ["simple_batch_sparse_matrix_helpers_example"],
+    "cuDSS/simple_complex": ["simple_complex_example"],
+    "cuDSS/simple_dense_matrix_helpers": ["simple_dense_matrix_helpers_example"],
+    "cuDSS/simple_get_set": ["simple_get_set_example"],
+    "cuDSS/simple_hybrid_execute_mode": ["simple_hybrid_execute_mode_example"],
+    "cuDSS/simple_hybrid_memory_mode": ["simple_hybrid_memory_mode_example"],
+    "cuDSS/simple_memory_handler": ["simple_memory_handler_example"],
+    "cuDSS/simple_mg_mode": ["simple_mg_mode_example"],
+    "cuDSS/simple_mgmn_distributed_matrix": ["simple_mgmn_distributed_matrix_example_openmpi", "simple_mgmn_distributed_matrix_example_nccl"],
+    "cuDSS/simple_mgmn_mode": ["simple_mgmn_mode_example_openmpi", "simple_mgmn_mode_example_nccl"],
+    "cuDSS/simple_multithreaded_mode": ["simple_multithreaded_mode_example_gomp"],
+    "cuDSS/simple_reordering_phase": ["simple_reordering_phase_example"],
+    "cuDSS/simple_residual": ["simple_residual_example"],
+    "cuDSS/simple_schur_complement": ["simple_schur_complement_example"],
+    "cuDSS/simple_sparse_matrix_helpers": ["simple_sparse_matrix_helpers_example"],
+    "cuDSS/simple_uniform_batch": ["simple_uniform_batch_example"],
+    "cuDSS/test_communication_layer": ["test_communication_layer_example_openmpi", "test_communication_layer_example_nccl"],
+    "cuDSS/test_threading_layer": ["test_threading_layer_example_gomp"]
+  },
+  "subtrees": ["cuDSS"]
+}

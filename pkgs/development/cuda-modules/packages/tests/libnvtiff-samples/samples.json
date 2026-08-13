@@ -1,0 +1,8 @@
+{
+  "samples": {
+    "nvTIFF/nvTIFF-Decode-Encode": ["nvTiff_example"],
+    "nvTIFF/nvTIFF-Decode-Image-ROI": ["nvtiff_decode_image_roi"],
+    "nvTIFF/nvTIFF-GeoTIFF-Decode": ["nvtiff_geotiff_decode"]
+  },
+  "subtrees": ["nvTIFF"]
+}

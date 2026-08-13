@@ -1,4 +1,4 @@
-{ buildRedist }:
+{ buildRedist, tests }:
 buildRedist {
   redistName = "nvtiff";
   pname = "libnvtiff";
@@ -10,6 +10,10 @@ buildRedist {
     "lib"
     "static"
   ];
+
+  # Defined in `packages/tests/libnvtiff-samples`, not here: a redistributable is unpacked rather
+  # than compiled, so nothing which exercises it is part of building it.
+  passthru.tests = tests.libnvtiff-samples;
 
   meta = {
     description = "Accelerates TIFF encode/decode on NVIDIA GPUs";

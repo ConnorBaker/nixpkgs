@@ -1,0 +1,14 @@
+{
+  "samples": {
+    "cuRAND/Host/mrg32k3a": ["curand_mrg32k3a_uniform_example", "curand_mrg32k3a_normal_example", "curand_mrg32k3a_lognormal_example", "curand_mrg32k3a_poisson_example"],
+    "cuRAND/Host/mt19937": ["curand_mt19937_uniform_example", "curand_mt19937_normal_example", "curand_mt19937_lognormal_example", "curand_mt19937_poisson_example"],
+    "cuRAND/Host/mtgp32": ["curand_mtgp32_uniform_example", "curand_mtgp32_normal_example", "curand_mtgp32_lognormal_example", "curand_mtgp32_poisson_example"],
+    "cuRAND/Host/philox": ["curand_philox_uniform_example", "curand_philox_normal_example", "curand_philox_lognormal_example", "curand_philox_poisson_example"],
+    "cuRAND/Host/scrambled_sobol32": ["curand_scrambled_sobol32_uniform_example", "curand_scrambled_sobol32_normal_example", "curand_scrambled_sobol32_lognormal_example", "curand_scrambled_sobol32_poisson_example"],
+    "cuRAND/Host/scrambled_sobol64": ["curand_scrambled_sobol64_uniform_example", "curand_scrambled_sobol64_normal_example", "curand_scrambled_sobol64_lognormal_example", "curand_scrambled_sobol64_poisson_example"],
+    "cuRAND/Host/sobol32": ["curand_sobol32_uniform_example", "curand_sobol32_normal_example", "curand_sobol32_lognormal_example", "curand_sobol32_poisson_example"],
+    "cuRAND/Host/sobol64": ["curand_sobol64_uniform_example", "curand_sobol64_normal_example", "curand_sobol64_lognormal_example", "curand_sobol64_poisson_example"],
+    "cuRAND/Host/xorwow": ["curand_xorwow_uniform_example", "curand_xorwow_normal_example", "curand_xorwow_lognormal_example", "curand_xorwow_poisson_example"]
+  },
+  "subtrees": ["cuRAND"]
+}

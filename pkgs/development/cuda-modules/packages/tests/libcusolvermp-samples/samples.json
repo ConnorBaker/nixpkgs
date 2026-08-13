@@ -1,0 +1,6 @@
+{
+  "samples": {
+    "cuSOLVERMp": ["mp_getrf_getrs", "mp_potrf_potrs", "mp_potrf_potrs_fp32", "mp_potrf_potrs_fp32emulation", "mp_geqrf", "mp_syevd", "mp_sygvd", "mp_gels"]
+  },
+  "subtrees": ["cuSOLVERMp"]
+}

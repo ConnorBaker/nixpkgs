@@ -1,0 +1,6 @@
+{
+  "samples": {
+    "cuBLASMp": ["pgemm", "pmatmul", "pmatmul_ag", "pmatmul_rs", "pmatmul_ar", "ptrsm", "psyrk", "pgeadd", "ptradd"]
+  },
+  "subtrees": ["cuBLASMp"]
+}

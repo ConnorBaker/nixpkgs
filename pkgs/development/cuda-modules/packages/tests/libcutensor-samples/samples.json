@@ -1,0 +1,7 @@
+{
+  "samples": {
+    "cuTENSOR": ["einsum", "contraction", "contraction_jit", "contraction_plan_cache", "contraction_trinary", "blocksparse", "elementwise_binary", "elementwise_permute", "elementwise_permute_padding", "elementwise_trinary", "reduction"],
+    "cuTENSORMg": ["contraction_multi_gpu", "blog_post"]
+  },
+  "subtrees": ["cuTENSOR", "cuTENSORMg"]
+}

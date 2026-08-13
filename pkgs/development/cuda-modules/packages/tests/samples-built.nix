@@ -48,7 +48,11 @@ let
   # declaration saying they cannot has to go, rather than staying to excuse the next breakage. The
   # entries are printed on every build, so "we know these are all broken" is in the log of every
   # green run rather than in an attribute nobody opens.
-  knowinglyUnavailable = { };
+  knowinglyUnavailable = {
+    "libcublasmp-samples" =
+      "its four pmatmul programs call cublasMpMatmulDescriptorAttributeSet, which the cuBLASMp every"
+      + " package set ships does not declare, and the subtree is one CMake project so all nine fail";
+  };
 
   # Filtered on carrying a sample rather than on anything about the name: `recurseIntoAttrs` leaves a
   # boolean beside the testers, and the manifest and program checks are derivations which run no

@@ -4,6 +4,7 @@
   libcublas,
   mpi,
   nccl,
+  tests,
 }:
 buildRedist {
   redistName = "cudss";
@@ -56,6 +57,10 @@ buildRedist {
 
     popd >/dev/null
   '';
+
+  # Defined in `packages/tests/libcudss-samples`, not here: a redistributable is unpacked rather
+  # than compiled, so nothing which exercises it is part of building it.
+  passthru.tests = tests.libcudss-samples;
 
   meta = {
     description = "Library of GPU-accelerated linear solvers with sparse matrices";

@@ -1,4 +1,7 @@
-{ buildRedist }:
+{
+  buildRedist,
+  tests,
+}:
 buildRedist {
   redistName = "cuda";
   pname = "libnvjpeg";
@@ -11,6 +14,10 @@ buildRedist {
     "static"
     "stubs"
   ];
+
+  # Defined in `packages/tests/libnvjpeg-samples`, not here: a redistributable is unpacked rather
+  # than compiled, so nothing which exercises it is part of building it.
+  passthru.tests = tests.libnvjpeg-samples;
 
   meta = {
     description = "Provides high-performance, GPU accelerated JPEG decoding functionality for image formats commonly used in deep learning and hyperscale multimedia applications";
