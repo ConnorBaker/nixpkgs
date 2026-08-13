@@ -92,6 +92,14 @@ let
     ]
   );
 
+  # Block-scaled FP8, which only the newer checkout carries -- so it is asked of the manifest for
+  # the same reason `brokenEmulationSampleRoots` is, rather than named outright: the pin cuBLAS uses
+  # on CUDA 12 does not contain it, and a `sampleArgs` key naming a project the manifest lacks is an
+  # error.
+  blockScaledFp8SampleRoots = lib.intersectLists (lib.attrNames manifest.samples) [
+    "cuBLASLt/LtBlk128x128Fp8Matmul"
+  ];
+
   sampleArgs = {
     # Measured by running the tests on an RTX 4090 (SM 8.9): the FP8 matmul passes there, while both
     # narrow-precision matmuls abort with `cuBLAS API failed`.
@@ -99,7 +107,16 @@ let
     "cuBLASLt/LtMxfp8Matmul".minCudaCapability = "10.0";
     "cuBLASLt/LtNvfp4Matmul".minCudaCapability = "10.0";
   }
-  // lib.genAttrs brokenEmulationSampleRoots emulationHelperMissing;
+  // lib.genAttrs brokenEmulationSampleRoots emulationHelperMissing
+  # Aborts with `cuBLAS API failed` on the same RTX 4090, which is what the two narrow-precision
+  # matmuls above do and what they are gated at 10.0 for. Only its failure at 8.9 was measured --
+  # there is no Hopper here to ask -- so 10.0 is by analogy with those siblings rather than by
+  # measurement of the boundary: block scaling at 128x128 granularity is a Blackwell feature, and a
+  # gate which is too high withholds a test from hardware that could run it, while one which is too
+  # low aborts on hardware that cannot.
+  // lib.genAttrs blockScaledFp8SampleRoots (_: {
+    minCudaCapability = "10.0";
+  });
 in
 mkSamples {
   component = libcublas;

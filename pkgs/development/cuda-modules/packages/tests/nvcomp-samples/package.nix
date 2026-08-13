@@ -33,6 +33,29 @@ let
       INTERFACE_INCLUDE_DIRECTORIES "${lib.getInclude nvcomp}/include")
     find_package(CUDAToolkit REQUIRED)
   '';
+  # Every program here but the two quickstart examples requires an input file, and none ships one:
+  # run with no arguments they print a usage message -- "Must specify at least one file via
+  # '-f <file>'" -- and exit 1.
+  #
+  # The file is taken from the checkout rather than generated, so it is pinned to the revision the
+  # sources came from and staged by the same mechanism as every other sample's data. These two are
+  # simply the largest files in their respective projects, which makes them the most compressible
+  # things to hand: a compressor benchmark given a few hundred bytes measures its own startup.
+  benchmarkInput = "benchmark_template_chunked.cuh";
+  exampleInput = "high_level_quickstart_example.cpp";
+
+  # No `expectedOutputs`, and not by oversight. These write nothing unless asked to with `-o`, and
+  # unlike a sample whose only evidence of having run is a file it wrote, each of these decompresses
+  # what it just compressed and aborts when the round trip does not hold. The exit status is
+  # therefore load-bearing rather than vacuous here -- it is what caught `benchmark_cascaded_chunked`
+  # below, which exits 0 for the eight algorithms beside it.
+  withInput = input: extraArgs: {
+    dataFiles = [ input ];
+    args = extraArgs ++ [
+      "-f"
+      input
+    ];
+  };
 in
 mkSamples {
   component = nvcomp;
@@ -45,6 +68,63 @@ mkSamples {
     lz4
     zlib
   ];
+
+  testArgs = {
+    "nvCOMP/benchmarks" =
+      lib.genAttrs [
+        "benchmark_ans_chunked"
+        "benchmark_bitcomp_chunked"
+        "benchmark_deflate_chunked"
+        "benchmark_gdeflate_chunked"
+        "benchmark_lz4_chunked"
+        "benchmark_snappy_chunked"
+        "benchmark_zstd_chunked"
+      ] (_: withInput benchmarkInput [ ])
+      // {
+        # Cascaded compression is the one algorithm here which reads its input as fixed-width
+        # integers rather than as bytes, so text of arbitrary length is rejected outright:
+        # `what(): ERROR: Invalid input data`, and the program aborts. `-m 4` pads the input to a
+        # multiple of four bytes, which is all it wants; measured, `-m 8` and `-m 16` do as well.
+        benchmark_cascaded_chunked = withInput benchmarkInput [
+          "-m"
+          "4"
+        ];
+
+        # The only one taking a positional argument, and it is required: the format to exercise the
+        # high-level interface with, one of snappy, bitcomp, ans, cascaded, gdeflate, deflate, lz4 or
+        # zstd. LZ4 rather than any other because it is the one the low-level quickstart uses too.
+        benchmark_hlif = withInput benchmarkInput [ "lz4" ];
+      };
+
+    "nvCOMP/examples" =
+      lib.genAttrs [
+        "gdeflate_cpu_compression"
+        "gdeflate_cpu_decompression"
+        "gzip_gpu_decompression"
+        "lz4_cpu_compression"
+        "lz4_cpu_decompression"
+        "nvcomp_crc32"
+      ] (_: withInput exampleInput [ ])
+      //
+        lib.genAttrs
+          [
+            "deflate_cpu_compression"
+            "deflate_cpu_decompression"
+          ]
+          # These two take the container as well as the file -- "Must choose an algorithm via
+          # '-a <algo>', and must specify at least one file via '-f <file>'" -- and accept `deflate`,
+          # `zlib` or `gzip`. The raw stream is the one the other deflate programs here produce.
+          (
+            _:
+            withInput exampleInput [
+              "-a"
+              "deflate"
+            ]
+          );
+
+    # `high_level_quickstart_example` and `low_level_quickstart_example` take no arguments and
+    # generate their own data, so they are not named here.
+  };
 
   sampleArgsFor = sampleRoot: {
     postPatch = ''
