@@ -7,22 +7,20 @@
   cccl,
   cuda_cudart,
   cuda_nvcc,
+  cuda-library-samples-src,
   cudatoolkit,
   libcusparse_lt,
   libcutensor,
-  fetchFromGitHub,
   lib,
   libcusparse,
   setupCudaHook,
 }:
 let
   base = backendStdenv.mkDerivation (finalAttrs: {
-    src = fetchFromGitHub {
-      owner = "NVIDIA";
-      repo = "CUDALibrarySamples";
-      rev = "e57b9c483c5384b7b97b7d129457e5a9bdcdb5e1";
-      sha256 = "0g17afsmb8am0darxchqgjz1lmkaihmnn7k1x4ahg5gllcmw8k3l";
-    };
+    # The one pin of this repository in the package set. This file used to carry a second one, in
+    # base32, which converted to the same hash as the shared fetch -- so the two agreed, and a bump
+    # which updated one of them would have gone unnoticed rather than conflicting.
+    src = cuda-library-samples-src;
     version =
       lib.strings.substring 0 7 finalAttrs.src.rev + "-" + lib.versions.majorMinor cudatoolkit.version;
     nativeBuildInputs = [
