@@ -133,4 +133,86 @@
       lib.all (
         license: (license.free or false) || lib.elem (license.shortName or null) cudaLicenseNames
       ) (lib.toList package.meta.license);
+
+  /**
+    System features for scheduling tests against the physical GPUs' compute capabilities.
+
+    Baseline requirements use minimum-version ordering; architecture-specific requirements
+    need the exact base capability, and family-specific requirements need the same major
+    version and a sufficient minor. Multiple GPUs advertise the union, since their
+    architecture-specific features are not interchangeable.
+
+    This is a scheduling relation, not a guarantee of binary compatibility. The package
+    set must compile for the execution hardware. Inputs must name known physical GPU
+    capabilities, not suffixed compilation targets.
+
+    # Type
+
+    ```
+    getCudaSystemFeatures :: [CudaCapability] -> [String]
+    ```
+
+    # Examples
+
+    ```nix
+    nix.settings.system-features =
+      [ "big-parallel" "cuda" ] ++ pkgs._cuda.lib.getCudaSystemFeatures [ "8.9" ];
+    ```
+  */
+  getCudaSystemFeatures =
+    cudaCapabilities:
+    let
+      infoOf = cudaCapability: _cuda.db.cudaCapabilityToInfo.${cudaCapability};
+
+      isFeatureSet =
+        cudaCapability:
+        (infoOf cudaCapability).isArchitectureSpecific || (infoOf cudaCapability).isFamilySpecific;
+
+      # The GPU a feature set is spoken of relative to: "9.0a" and "9.0f" are both "9.0".
+      baseOf =
+        cudaCapability: lib.head (lib.match "([[:digit:]]+\\.[[:digit:]]+)[[:lower:]]+" cudaCapability);
+
+      satisfies =
+        cudaCapability: required:
+        let
+          info = infoOf required;
+        in
+        if info.isArchitectureSpecific then
+          baseOf required == cudaCapability
+        else if info.isFamilySpecific then
+          lib.versions.major required == lib.versions.major cudaCapability
+          && lib.versionAtLeast cudaCapability (baseOf required)
+        else
+          lib.versionAtLeast cudaCapability required;
+
+      featuresFor =
+        cudaCapability:
+        assert lib.asserts.assertMsg (
+          _cuda.db.cudaCapabilityToInfo ? ${cudaCapability}
+        ) "_cuda.lib.getCudaSystemFeatures: unknown CUDA capability ${cudaCapability}";
+        assert lib.asserts.assertMsg (!isFeatureSet cudaCapability)
+          "_cuda.lib.getCudaSystemFeatures: ${cudaCapability} is a feature set rather than a GPU; pass ${baseOf cudaCapability}";
+        lib.map _cuda.lib.mkCudaSystemFeature (
+          lib.filter (satisfies cudaCapability) _cuda.db.allSortedCudaCapabilities
+        );
+    in
+    lib.unique (lib.concatMap featuresFor cudaCapabilities);
+
+  /**
+    The exact-match feature name shared by test requirements and builder advertisements.
+
+    # Type
+
+    ```
+    mkCudaSystemFeature :: CudaCapability -> String
+    ```
+
+    # Examples
+
+    ```nix
+    mkCudaSystemFeature "8.9"
+    => "cuda-sm-89"
+    ```
+  */
+  mkCudaSystemFeature = cudaCapability: "cuda-sm-${_cuda.lib.dropDots cudaCapability}";
 }

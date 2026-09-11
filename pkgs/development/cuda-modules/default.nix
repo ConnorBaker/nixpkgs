@@ -170,10 +170,37 @@ let
           isJetsonBuild = finalCudaPackages.backendStdenv.hasJetsonCudaCapability;
         };
     }
-    // packagesFromDirectoryRecursive {
-      inherit (finalCudaPackages) callPackage;
-      directory = ./packages;
-    };
+    // (
+      let
+        packages = packagesFromDirectoryRecursive {
+          inherit (finalCudaPackages) callPackage;
+          directory = ./packages;
+        };
+      in
+      # Load tests separately so their construction helpers stay out of the package set.
+      removeAttrs packages [ "tests" ]
+      // {
+        # Inherit the parent's newScope to preserve build/host splicing. Only support belongs
+        # in this child scope: tests named after packages must not shadow their dependencies.
+        # Mark the resulting tree for nix-env/Hydra traversal.
+        tests =
+          let
+            support = lib.makeScope finalCudaPackages.newScope (
+              finalSupport:
+              packagesFromDirectoryRecursive {
+                inherit (finalSupport) callPackage;
+                directory = ./packages/tests/support;
+              }
+            );
+          in
+          lib.recurseIntoAttrs (
+            removeAttrs (packagesFromDirectoryRecursive {
+              inherit (support) callPackage;
+              directory = ./packages/tests;
+            }) [ "support" ]
+          );
+      }
+    );
 
   composedExtensions = composeManyExtensions (
     optionals config.allowAliases [

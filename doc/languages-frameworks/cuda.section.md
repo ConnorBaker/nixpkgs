@@ -368,3 +368,155 @@ Tests which always require CUDA should be placed in `passthru.tests.cuda`, while
 :::
 
 This is useful for tests which are deterministic (e.g., checking exit codes) and which can be provided with all necessary resources in the sandbox.
+
+#### Component samples {#cuda-component-samples}
+
+`cudaPackages.tests.cuda-library-samples` contains sample derivations nested by upstream directory,
+such as `cuBLAS.Level-3.gemm` and `cuSPARSELt.matmul`.
+
+```ShellSession
+$ nix-build -A cudaPackages.tests.cuda-library-samples.cuBLAS.Level-3.gemm
+$ nix-build -A cudaPackages.tests.cuda-library-samples.cuBLAS.Level-3.gemm.testers.all
+$ result/bin/* --list
+$ result/bin/* cublas_gemm_example
+```
+
+Each sample exposes the following through `passthru`:
+
+| Attribute | Purpose |
+|---|---|
+| `testers.all` | Builds a runner and validates its invocation settings without executing GPU code. |
+| `tests.build` | Builds the sample and its runner. |
+| `tests.run` | Executes the final runner in a GPU sandbox, retaining `test.log`. |
+| `tests.buildFailure` | Replaces `build` and `run` when a build failure is expected. |
+
+`cudaPackages.tests.samples-built` collects available `build` and `buildFailure` checks;
+`subtrees.cuBLAS`, for example, selects one subtree. Other tests are not collected.
+Replacement checks in these two roles must remain build-only.
+
+Override `tests.cuda-library-samples` to select a smaller scope. The aggregate succeeds when the
+selected checks succeed; an empty selection is valid.
+
+CUDA components are unfree; official Hydra does not build or cache these checks.
+
+##### Source selection and tree construction {#cuda-sample-tree-model}
+
+The source is pinned with `builtins.fetchTarball`. Discovery works with
+`--option allow-import-from-derivation false`; an uncached source needs network access on the evaluator.
+CUDA 12 cuBLAS selects an older pin because the newer shared headers require CUDA 13.
+
+Discovery recurses through selected directories without following symlinks. A regular
+`CMakeLists.txt` marks a project leaf; empty branches are pruned. Explicit aggregate entry points
+are descended into instead. This uses the pinned layout, without parsing CMake:
+
+```nix
+mkSamples {
+  component = libcublas;
+  subtrees = [ "cuBLAS" "cuBLASLt" ];
+  excludeProjects.cuBLASLt = "Build its independent child projects.";
+}
+```
+
+Exclusions must name existing aggregates with project descendants and nonempty reasons.
+A directory named `recurseForDerivations` is rejected because it collides with Nixpkgs traversal.
+
+#### Customizing samples {#cuda-sample-requirements}
+
+`defaults` supplies shared construction arguments, including `buildInputs`, or a function of the
+project's directory names.
+`fixups` is a sparse, nested tree: leaves supply replacement attributes, or callbacks receiving the
+previous arguments. Append lists and hooks explicitly; there is no recursive argument merge.
+
+```nix
+fixups.cuSPARSELt.matmul = {
+  programsWithDeviceCodeFromPrebuiltLibrary = [ "matmul_example_static" ];
+  invocations.matmul_example_static.runtimeEnv.LD_LIBRARY_PATH = "${addDriverRunpath.driverLink}/lib";
+};
+```
+
+Unknown fixup paths and mismatched branches/leaves fail evaluation. Fixups change packages, not
+tree membership. A leaf's `override` changes construction arguments; `overrideAttrs` and
+`finalAttrs` work through `lib.extendMkDerivation`. Changing the suite's source rediscovers the tree.
+Source-dependent hooks should use `"$sampleRoot/…"`.
+
+`buildSample` builds only the package; `mkSample` adds testers and tests without changing that
+build. Invocation and expected-failure changes affect checks only. Runners and checks follow the
+final overridden sample and have their own metadata. Low-level phase or passthru replacements
+can opt out of these relationships.
+
+#### Executables and invocations {#cuda-invoking-samples}
+
+Installation uses the build's current CMake file API reply, including regeneration, to find actual
+executable artifacts rather than guessing from target or source names. Missing artifacts, duplicate
+names, and empty projects fail the build. The installed `bin` directory is the executable inventory;
+nothing produced by a build is read back into Nix evaluation.
+
+`invocations` supplies settings keyed by executable name, or a function of the final `{ src, sampleRoot }`.
+Undeclared executables use empty settings. Each record accepts literal `args`, `dataFiles`
+(scratch-relative destination to absolute source), scratch-relative `expectedOutputs`,
+`workSubdir`, `runtimeEnv`, and `problems`. These are curated: upstream does not supply enough
+information to infer useful inputs or expected results.
+
+```nix
+invocations = { src, ... }: {
+  nvtiff_decode_image_roi = {
+    args = [
+      "-f" "${src}/nvTIFF/nvTIFF-Decode-Encode/images/bali_notiles.tif"
+      "-roi" "100,100,256,256" "-o" "output"
+    ];
+    expectedOutputs = [ "output/bali_notiles_nvtiff_out_0.ppm" ];
+  };
+};
+```
+
+Runner construction and `--validate` check executable names and prepare every declared invocation,
+including skipped ones, without executing it. Preparation copies inputs into a fresh writable
+directory and creates working/output directories. Missing inputs, invalid paths, and outputs
+already present after staging fail. Expected outputs must become nonempty files inside that
+directory after execution; this checks freshness and presence, not numerical correctness.
+
+The runner attempts every available executable, or one selected by name; failures do not stop
+siblings. Selecting an unavailable program or running none fails. `--list` does not stage inputs;
+execution stages only selected, available programs. PATH contains the sample and coreutils.
+
+#### Sample problems {#cuda-sample-problems}
+
+Requirements and unavailable build inputs restrict builds without removing projects from the tree.
+Dependency policy is resolved at the dependency's identity, not reinterpreted under the sample.
+Executable-specific `problems` use the identifier `${sample.pname}-${program}`, so unaffected siblings
+can still run. Runtime exclusions require manual remeasurement.
+
+Expected build failures are separate from availability:
+
+```nix
+expectedFailure = {
+  message = "The sample calls an API absent from this component.";
+  expectedBuilderExitCode = 2;
+  expectedBuilderLogEntries = [ ''error: identifier "missingApi" is undefined'' ];
+};
+```
+
+The standard failure tester checks the original build, including configuration. Unexpected success,
+a different exit code, or missing literal diagnostics fails the check. The underlying attempt and log
+are exposed through `tests.buildFailure.failed`. An expectation neither modifies the sample nor
+bypasses unavailable prerequisites; availability is permission to attempt a build, not evidence of success.
+
+`cuobjdump` checks that compiled device code contains requested SASS architectures and no unrequested
+SASS or PTX. Host-only programs and declared prebuilt-library device code are checked separately.
+Stale prebuilt declarations fail. Embedded LTO arrays from handwritten commands remain a reported
+inspection limit.
+
+#### Running capability-gated checks {#cuda-running-capability-gated-tests}
+
+Only execution checks require the `cuda` system feature, plus `cuda-sm-<capability>` when a project
+has a minimum capability. The builder must expose driver/devices to the sandbox; see
+`programs.nix-required-mounts.presets.nvidia-gpu`. For an RTX 4090:
+
+```nix
+nix.settings.system-features =
+  [ "big-parallel" "cuda" ] ++ pkgs._cuda.lib.getCudaSystemFeatures [ "8.9" ];
+```
+
+`getCudaSystemFeatures` advertises minimum-capability requirements the GPUs satisfy, with separate
+architecture- and family-specific rules. This schedules tests; it does not guarantee arbitrary cubin
+compatibility. Configure the package set's CUDA capabilities for the execution hardware.
