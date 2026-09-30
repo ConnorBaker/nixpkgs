@@ -49,13 +49,13 @@ let
   # The location of the password files when using an immutable /etc.
   immutablePasswordFilesLocation = "/var/lib/nixos/etc";
   passwordFilesLocation = if immutableEtc then immutablePasswordFilesLocation else "/etc";
-  # The filenames created by systemd-sysusers.
+  # The filenames created by systemd-sysusers; gshadow only by one built with it (not on musl).
   passwordFiles = [
     "passwd"
     "group"
     "shadow"
-    "gshadow"
-  ];
+  ]
+  ++ lib.optional (!config.systemd.package.stdenv.hostPlatform.isMusl) "gshadow";
 
 in
 
