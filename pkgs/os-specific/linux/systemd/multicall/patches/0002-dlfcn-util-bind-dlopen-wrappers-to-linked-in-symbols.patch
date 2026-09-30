@@ -1,0 +1,127 @@
+From 30f78ff2b5691ee8ae861b243ff5144a0fcb4c70 Mon Sep 17 00:00:00 2001
+From: Connor Baker <ConnorBaker01@gmail.com>
+Date: Mon, 28 Sep 2026 08:34:49 +0000
+Subject: [PATCH 2/4] dlfcn-util: bind dlopen() wrappers to linked-in symbols
+ in static builds
+
+With BUILD_STATIC, DLSYM_ARG() and friends pass the address of the real
+symbol along with the pointer to fill, and dlsym_many_or_warnv() assigns
+it instead of calling dlsym(). dlopen_verbose() reports the library as
+linked in and returns a sentinel handle that safe_dlclose() ignores, so
+every dlopen_*() loader succeeds and the features stay enabled.
+
+bpf_create_map() was removed in libbpf 1.0 and cannot be referenced
+directly.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01AmfsFKaDy2jArNArKVsUhq
+---
+ src/basic/dlfcn-util.c | 18 ++++++++++++++++++
+ src/basic/dlfcn-util.h | 19 +++++++++++++++++++
+ src/shared/bpf-util.c  |  2 ++
+ 3 files changed, 39 insertions(+)
+
+diff --git a/src/basic/dlfcn-util.c b/src/basic/dlfcn-util.c
+index fe2f6a5f88..e3421df570 100644
+--- a/src/basic/dlfcn-util.c
++++ b/src/basic/dlfcn-util.c
+@@ -8,6 +8,11 @@ void* safe_dlclose(void *dl) {
+         if (!dl)
+                 return NULL;
+ 
++#if BUILD_STATIC
++        if (dl == DLOPEN_STATIC_HANDLE)
++                return NULL;
++#endif
++
+         assert_se(dlclose(dl) == 0);
+         return NULL;
+ }
+@@ -21,6 +26,12 @@ static int dlsym_many_or_warnv(void *dl, int log_level, va_list ap) {
+ 
+         while ((fn = va_arg(ap, typeof(fn)))) {
+                 void (*tfn)(void);
++
++#if BUILD_STATIC
++                /* DLSYM_ARG() passes the address of the statically linked symbol instead of its name. */
++                tfn = va_arg(ap, typeof(tfn));
++                assert(tfn);
++#else
+                 const char *symbol;
+ 
+                 symbol = va_arg(ap, typeof(symbol));
+@@ -30,6 +41,7 @@ static int dlsym_many_or_warnv(void *dl, int log_level, va_list ap) {
+                         return log_full_errno(log_level,
+                                               SYNTHETIC_ERRNO(ELIBBAD),
+                                               "Can't find symbol %s: %s", symbol, dlerror());
++#endif
+                 *fn = tfn;
+         }
+ 
+@@ -55,6 +67,12 @@ int dlopen_verbose(void **dlp, const char *filename, int log_level) {
+         if (*dlp)
+                 return 0; /* Already loaded */
+ 
++#if BUILD_STATIC
++        log_debug("Shared library '%s' is linked in statically.", filename);
++        *dlp = DLOPEN_STATIC_HANDLE;
++        return 1;
++#endif
++
+         _cleanup_(dlclosep) void *dl = NULL;
+         const char *dle = NULL;
+         r = dlopen_safe(filename, &dl, &dle);
+diff --git a/src/basic/dlfcn-util.h b/src/basic/dlfcn-util.h
+index d50ba0eec7..cfd7539327 100644
+--- a/src/basic/dlfcn-util.h
++++ b/src/basic/dlfcn-util.h
+@@ -23,6 +23,24 @@ int dlopen_many_sym_or_warn_sentinel(void **dlp, const char *filename, int log_l
+ #define DLSYM_PROTOTYPE(symbol)                \
+         typeof(symbol)* sym_##symbol
+ 
++#if BUILD_STATIC
++/* In static builds the libraries are linked in directly: instead of the symbol name, pass the address of
++ * the real symbol, which dlsym_many_or_warn() then assigns to the "sym_" pointer. */
++#define DLSYM_ARG(arg) \
++        ({ assert_cc(__builtin_types_compatible_p(typeof(sym_##arg), typeof(&arg))); &sym_##arg; }), (void (*)(void)) &arg
++
++#define DLSYM_ARG_FORCE(arg) \
++        &sym_##arg, (void (*)(void)) &arg
++
++/* A weak reference does not pull the defining object out of a static archive (and turns every other
++ * reference in the translation unit weak too), hence optional symbols are referenced strongly, and callers
++ * must guard symbols the linked library version lacks at compile time. */
++#define DLSYM_OPTIONAL(dl, name) \
++        ({ sym_##name = (typeof(sym_##name)) &name; })
++
++/* Stands in for the handle of a library that is linked in statically. */
++#define DLOPEN_STATIC_HANDLE ((void*) UINTPTR_MAX)
++#else
+ /* Macro useful for putting together variable/symbol name pairs when calling dlsym_many_or_warn(). Assumes
+  * that each library symbol to resolve will be placed in a variable with the "sym_" prefix, i.e. a symbol
+  * "foobar" is loaded into a variable "sym_foobar". */
+@@ -45,6 +63,7 @@ int dlopen_many_sym_or_warn_sentinel(void **dlp, const char *filename, int log_l
+                 typeof(sym_##name) _v = (typeof(sym_##name)) dlsym((dl), #name);                \
+                 if (_v) sym_##name = _v;                                                        \
+         })
++#endif
+ 
+ /* If called dlopen_many_sym_or_warn() will fail with EPERM. This can be used to block lazy loading of shared
+  * libs, if we transfer a process into a different namespace. Note that this does not work for all calls of
+diff --git a/src/shared/bpf-util.c b/src/shared/bpf-util.c
+index b1a8a25032..95c4905b24 100644
+--- a/src/shared/bpf-util.c
++++ b/src/shared/bpf-util.c
+@@ -151,7 +151,9 @@ int dlopen_bpf(int log_level) {
+          * symbol degrades bpf_kernel_has_kfunc() instead of failing dlopen_bpf() entirely. Unresolved
+          * prototypes keep their initializers (NULL, or a fallback returning -ENOSYS for
+          * bpf_token_create). */
++#if !BUILD_STATIC /* removed in libbpf 1.0 */
+         DLSYM_OPTIONAL(bpf_dl, bpf_create_map);
++#endif
+         DLSYM_OPTIONAL(bpf_dl, bpf_map_create);
+         DLSYM_OPTIONAL(bpf_dl, bpf_object__next_map);
+         DLSYM_OPTIONAL(bpf_dl, bpf_token_create);
+-- 
+2.54.0
+

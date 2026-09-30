@@ -1,0 +1,167 @@
+From 4da0b56903bfeceea758acaf6308bd4ba54eacb4 Mon Sep 17 00:00:00 2001
+From: Connor Baker <ConnorBaker01@gmail.com>
+Date: Mon, 28 Sep 2026 08:34:50 +0000
+Subject: [PATCH 3/4] musl: implement gettid(), raise() and abort() with system
+ calls
+
+musl caches the calling thread's TID in its thread descriptor, and only
+its own fork() and pthread_create() update it. In a child created with
+raw_clone() it is the parent's TID, and every musl function that uses
+it acts on the parent's thread:
+
+- gettid() returns the parent's TID, so is_main_thread() is false in the
+  child's only thread, and e.g. rename_process() fails with EPERM
+  ("Failed to rename process, ignoring: Operation not permitted" from
+  children of PID 1).
+- raise() sends the signal to the parent's thread (tkill on the cached
+  TID) and returns 0; the child carries on. safe_fork_full() calls it in
+  a child made with raw_clone() (FORK_NEW_*NS) when the parent died
+  early.
+- abort() raises SIGABRT the same way, so a failed assertion in such a
+  child (log_assert_failed(), assert_raw(), mmap-cache's abort()) sends
+  SIGABRT to its parent, before the child crashes itself.
+
+Implement all three in the musl compatibility layer with the system
+calls: gettid() with gettid(2), raise() with tgkill(getpid(), gettid(),
+sig) with all signals blocked (as musl's raise() blocks them), and
+abort() through that raise(), then, as musl's abort() does, with SIGABRT
+reset to its default action and unblocked, and failing that SIGKILL and
+_exit(127).
+
+This covers systemd's own calls, which the headers in src/include/musl/
+redirect. It does not cover calls compiled elsewhere: inside musl (its
+assert(), via __assert_fail(), and anything else in libc that calls its
+internal raise() or abort()) and in the libraries linked in statically
+(e.g. util-linux's libblkid calls abort()); nor musl's other uses of the
+cached TID:
+pthread_kill(pthread_self(), ...) and the owner of its stdio and mutex
+locks. systemd's own assertions do not go through <assert.h>.
+
+A reproducer: a static musl program whose clone(SIGCHLD) child calls
+raise(SIGUSR1) or abort(). Before, the parent receives SIGUSR1 (the
+child exits 0), or SIGABRT (the child then dies of SIGSEGV); with this
+layer, as with glibc, the child dies of SIGUSR1 or SIGABRT and the
+parent receives nothing.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01AmfsFKaDy2jArNArKVsUhq
+---
+ src/include/musl/signal.h |  3 +++
+ src/include/musl/stdlib.h |  3 +++
+ src/include/musl/unistd.h |  3 +++
+ src/libc/musl/meson.build |  1 +
+ src/libc/musl/signal.c    | 41 +++++++++++++++++++++++++++++++++++++++
+ src/libc/musl/unistd.c    |  7 +++++++
+ 6 files changed, 58 insertions(+)
+ create mode 100644 src/libc/musl/signal.c
+
+diff --git a/src/include/musl/signal.h b/src/include/musl/signal.h
+index c69a3b2856..aaf748d708 100644
+--- a/src/include/musl/signal.h
++++ b/src/include/musl/signal.h
+@@ -26,3 +26,6 @@
+ #ifndef SEGV_ADIPERR
+ #define SEGV_ADIPERR 7
+ #endif
++
++int missing_raise(int sig);
++#define raise missing_raise
+diff --git a/src/include/musl/stdlib.h b/src/include/musl/stdlib.h
+index ecfd6ccb43..4ff7dcc569 100644
+--- a/src/include/musl/stdlib.h
++++ b/src/include/musl/stdlib.h
+@@ -5,3 +5,6 @@
+ 
+ long long strtoll_fallback(const char *nptr, char **endptr, int base);
+ #define strtoll strtoll_fallback
++
++_Noreturn void missing_abort(void);
++#define abort missing_abort
+diff --git a/src/include/musl/unistd.h b/src/include/musl/unistd.h
+index 175661442d..b85dbe31ea 100644
+--- a/src/include/musl/unistd.h
++++ b/src/include/musl/unistd.h
+@@ -8,3 +8,6 @@ int missing_close_range(unsigned first_fd, unsigned end_fd, unsigned flags);
+ 
+ int missing_execveat(int dirfd, const char *pathname, char * const argv[], char * const envp[], int flags);
+ #define execveat missing_execveat
++
++pid_t missing_gettid(void);
++#define gettid missing_gettid
+diff --git a/src/libc/musl/meson.build b/src/libc/musl/meson.build
+index a06216f063..bfad1be176 100644
+--- a/src/libc/musl/meson.build
++++ b/src/libc/musl/meson.build
+@@ -7,6 +7,7 @@ endif
+ libc_wrapper_sources += files(
+         'crypt.c',
+         'printf.c',
++        'signal.c',
+         'stdio.c',
+         'stdlib.c',
+         'string.c',
+diff --git a/src/libc/musl/signal.c b/src/libc/musl/signal.c
+new file mode 100644
+index 0000000000..974d365a25
+--- /dev/null
++++ b/src/libc/musl/signal.c
+@@ -0,0 +1,41 @@
++/* SPDX-License-Identifier: LGPL-2.1-or-later */
++
++#include <signal.h>
++#include <stdlib.h>
++#include <sys/syscall.h>
++#include <unistd.h>
++
++/* musl's raise() and abort() send the signal to the TID cached in the thread descriptor, which only its own
++ * fork() and pthread_create() update (see missing_gettid()). In a child made with the clone() system call
++ * (raw_clone()), that is the parent's TID: the child's raise() would signal its parent, and its abort()
++ * would send SIGABRT to its parent before crashing itself. These look the IDs up with the system calls. */
++
++int missing_raise(int sig) {
++        sigset_t all, saved;
++        int r;
++
++        /* As musl does: no signal handler may run between looking up the IDs and sending the signal. */
++        (void) sigfillset(&all);
++        (void) sigprocmask(SIG_BLOCK, &all, &saved);
++        r = syscall(__NR_tgkill, getpid(), gettid(), sig);
++        (void) sigprocmask(SIG_SETMASK, &saved, NULL);
++        return r;
++}
++
++_Noreturn void missing_abort(void) {
++        sigset_t all, abrt;
++
++        (void) missing_raise(SIGABRT);
++
++        /* SIGABRT was caught and its handler returned, or it is blocked or ignored: as musl's abort() does,
++         * raise it again with the default action and unblocked, and failing that, end the process. */
++        (void) sigfillset(&all);
++        (void) sigprocmask(SIG_BLOCK, &all, NULL);
++        (void) sigaction(SIGABRT, &(const struct sigaction) { .sa_handler = SIG_DFL }, NULL);
++        (void) syscall(__NR_tgkill, getpid(), gettid(), SIGABRT);
++        (void) sigemptyset(&abrt);
++        (void) sigaddset(&abrt, SIGABRT);
++        (void) sigprocmask(SIG_UNBLOCK, &abrt, NULL);
++        (void) syscall(__NR_tgkill, getpid(), gettid(), SIGKILL);
++        _exit(127);
++}
+diff --git a/src/libc/musl/unistd.c b/src/libc/musl/unistd.c
+index 354fb5d016..cc61f873f7 100644
+--- a/src/libc/musl/unistd.c
++++ b/src/libc/musl/unistd.c
+@@ -13,3 +13,10 @@ int missing_close_range(unsigned first_fd, unsigned end_fd, unsigned flags) {
+ int missing_execveat(int dirfd, const char *pathname, char * const argv[], char * const envp[], int flags) {
+         return syscall(__NR_execveat, dirfd, pathname, argv, envp, flags);
+ }
++
++pid_t missing_gettid(void) {
++        /* musl returns the TID it cached in the thread descriptor, which only its own fork() and
++         * pthread_create() update. In a child made with the clone() system call (raw_clone()) it would be
++         * the parent's TID, and is_main_thread() would be false in the child's only thread. */
++        return (pid_t) syscall(__NR_gettid);
++}
+-- 
+2.54.0
+

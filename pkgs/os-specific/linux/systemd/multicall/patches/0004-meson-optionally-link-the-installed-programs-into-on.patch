@@ -1,0 +1,346 @@
+From 67cb956a2fb211aa266f70259bd4837682519df8 Mon Sep 17 00:00:00 2001
+From: Connor Baker <ConnorBaker01@gmail.com>
+Date: Mon, 28 Sep 2026 09:23:16 +0000
+Subject: [PATCH 4/4] meson: optionally link the installed programs into one
+ binary
+
+With -Dmulticall-binary=true, every installed program is partially linked
+into one relocatable object (tools/multicall-relink.py): its main() is
+renamed to sd_main_<program>, and all its other symbols are made local,
+so that programs defining the same global cannot collide. Its options,
+verbs and static destructors (the sections SYSTEMD_OPTIONS, SYSTEMD_VERBS
+and SYSTEMD_STATIC_DESTRUCT, walked through the linker-defined __start_
+and __stop_ symbols) move to sections of the program's own, so that
+it does not walk every program's entries. The objects are linked into
+systemd-multicall, installed to libexecdir, with a generated main()
+(tools/generate-multicall-dispatch.py) that finds the program by following
+argv[0]'s chain of symlinks, and falls back to the names programs
+recognize through invoked_as(). Each program is installed as a symlink to
+it, and is not linked on its own.
+
+-Dmulticall-programs= selects the programs; the others are neither built
+nor installed, and neither are programs that are not installed anyway.
+udev's helpers are always included, since the installed rules run them.
+The internal shared libraries (libsystemd-shared, libsystemd-core), which
+no program links then, are neither built nor installed.
+
+With b_lto, each program is code-generated at the partial link
+(-flinker-output=nolto-rel), which is GCC's; the renaming needs real
+symbols rather than LTO bytecode.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01AmfsFKaDy2jArNArKVsUhq
+---
+ meson.build                          | 78 ++++++++++++++++++++++++++++
+ meson_options.txt                    |  4 ++
+ src/core/meson.build                 |  4 +-
+ src/shared/meson.build               |  4 +-
+ tools/generate-multicall-dispatch.py | 77 +++++++++++++++++++++++++++
+ tools/meson.build                    |  2 +
+ tools/multicall-relink.py            | 37 +++++++++++++
+ 7 files changed, 204 insertions(+), 2 deletions(-)
+ create mode 100755 tools/generate-multicall-dispatch.py
+ create mode 100755 tools/multicall-relink.py
+
+diff --git a/meson.build b/meson.build
+index 2db5138147..e48c47bd07 100644
+--- a/meson.build
++++ b/meson.build
+@@ -1829,6 +1829,15 @@ executables = []
+ executables_by_name = {}
+ exported_by_name = {}
+ fuzzer_exes = []
++multicall_programs = []
++want_multicall = get_option('multicall-binary')
++multicall_selection = get_option('multicall-programs')
++if want_multicall and not meson.version().version_compare('>=1.3.0')
++        error('multicall-binary requires meson >= 1.3.0')
++endif
++if want_multicall and get_option('b_lto') and cc.get_id() != 'gcc'
++        error('multicall-binary with b_lto requires GCC (-flinker-output=nolto-rel)')
++endif
+ sources = []
+ 
+ # binaries that have --help and are intended for use by humans,
+@@ -2385,6 +2394,23 @@ foreach dict : executables
+                 error('Unknown install mode "@0@" for target "@1@"'.format(install, name))
+         endif
+ 
++        # With multicall-binary, an installed program is neither linked nor installed by itself: its objects
++        # go into systemd-multicall, and a symlink to that takes its place. A program left out of
++        # multicall-programs is not installed at all, except udev's helpers, which the installed udev rules run.
++        # Programs that are not installed are not built.
++        in_multicall = false
++        if want_multicall and not is_test and not is_fuzz
++                install_dir = kwargs.get('install_dir', bindir)
++                in_multicall = (install_shared or install_static) and (
++                                multicall_selection.length() == 0 or
++                                multicall_selection.contains(name) or
++                                install_dir == udevlibexecdir)
++                install_shared = false
++                install_static = false
++                build_by_default_shared = false
++                build_by_default_static = false
++        endif
++
+         exe = executable(
+                 name_shared,
+                 sources : exe_sources,
+@@ -2438,6 +2464,18 @@ foreach dict : executables
+                         'link_args' : dict.get('link_args_static', kwargs.get('link_args', [])),
+                 }
+ 
++                if in_multicall
++                        multicall_programs += {
++                                'name' : name,
++                                'install_dir' : install_dir,
++                                'sources' : exe_sources,
++                                'objects' : kwargs_static['objects'],
++                                'link_with' : link_with_static,
++                                'link_args' : kwargs_static['link_args'],
++                                'dependencies' : kwargs.get('dependencies', []),
++                        }
++                endif
++
+                 exe_static = executable(
+                         name_static,
+                         kwargs : kwargs_static,
+@@ -2520,6 +2558,46 @@ endforeach
+ 
+ alias_target('fuzzers', fuzzer_exes)
+ 
++if want_multicall
++        objcopy = find_program('objcopy')
++        multicall_objects = []
++        multicall_args = []
++        multicall_link_with = []
++        multicall_link_args = []
++        multicall_dependencies = []
++        foreach p : multicall_programs
++                symbol = 'sd_main_' + p['name'].underscorify()
++                multicall_objects += custom_target(
++                        input : p['objects'],
++                        output : p['name'] + '.multicall.o',
++                        command : [multicall_relink_py, '@OUTPUT@', symbol, objcopy,
++                                   get_option('b_lto') ? '--lto' : '--no-lto',
++                                   cc.cmd_array(), '--', '@INPUT@'])
++                multicall_args += ['--program', p['name'], symbol, p['sources']]
++                multicall_link_with += p['link_with']
++                multicall_link_args += p['link_args']
++                multicall_dependencies += p['dependencies']
++
++                install_symlink(p['name'],
++                                pointing_to : fs.relative_to(libexecdir / 'systemd-multicall', p['install_dir']),
++                                install_dir : p['install_dir'])
++        endforeach
++
++        multicall_dispatch_c = custom_target(
++                output : 'multicall-dispatch.c',
++                command : [generate_multicall_dispatch_py, '@OUTPUT@', multicall_args])
++
++        executable(
++                'systemd-multicall',
++                multicall_dispatch_c,
++                objects : multicall_objects,
++                link_with : multicall_link_with,
++                link_args : multicall_link_args,
++                dependencies : [multicall_dependencies, userspace],
++                install : true,
++                install_dir : libexecdir)
++endif
++
+ #####################################################################
+ 
+ test_dlopen = executables_by_name.get('test-dlopen')
+diff --git a/meson_options.txt b/meson_options.txt
+index 007780664e..c6809697e2 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -17,6 +17,10 @@ option('link-udev-shared', type : 'boolean',
+        description : 'link systemd-udevd and its helpers to libsystemd-shared.so')
+ option('systemd-multicall-binary', type : 'boolean', value : false,
+        description : 'link systemd+systemd-executor as a single binary')
++option('multicall-binary', type : 'boolean', value : false,
++       description : 'link the installed programs into one binary, systemd-multicall, and install symlinks to it')
++option('multicall-programs', type : 'array', value : [],
++       description : 'the programs to link into systemd-multicall (empty: all); others are not installed')
+ option('link-executor-shared', type : 'boolean',
+        description : 'link (separate) systemd-executor to libsystemd-shared.so and libsystemd-core.so')
+ option('link-systemctl-shared', type: 'boolean',
+diff --git a/src/core/meson.build b/src/core/meson.build
+index e8d6563803..dc06729aa1 100644
+--- a/src/core/meson.build
++++ b/src/core/meson.build
+@@ -197,7 +197,9 @@ libcore = shared_library(
+         link_depends : libshared_sym_path,
+         link_whole: libcore_static,
+         link_with : libshared,
+-        install : true,
++        # With multicall-binary, every installed program is linked statically, and none uses it.
++        build_by_default : not want_multicall,
++        install : not want_multicall,
+         install_dir : pkglibdir)
+ 
+ systemd_deps = [
+diff --git a/src/shared/meson.build b/src/shared/meson.build
+index 480d04000d..d2b9970921 100644
+--- a/src/shared/meson.build
++++ b/src/shared/meson.build
+@@ -493,5 +493,7 @@ libshared = shared_library(
+                       libsystemd_static],
+         dependencies : [libshared_deps,
+                         userspace],
+-        install : true,
++        # With multicall-binary, every installed program is linked statically, and none uses it.
++        build_by_default : not want_multicall,
++        install : not want_multicall,
+         install_dir : pkglibdir)
+diff --git a/tools/generate-multicall-dispatch.py b/tools/generate-multicall-dispatch.py
+new file mode 100755
+index 0000000000..683bab3607
+--- /dev/null
++++ b/tools/generate-multicall-dispatch.py
+@@ -0,0 +1,77 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: LGPL-2.1-or-later
++#
++# Generate main() of the multicall binary: find the program by the name it was invoked as, following
++# argv[0]'s chain of symlinks (/usr/sbin/reboot -> systemctl -> systemd-multicall), and failing that by the
++# names programs recognize themselves as through invoked_as().
++
++import re
++import sys
++
++output, args = sys.argv[1], sys.argv[2:]
++programs = []  # (name, symbol, aliases)
++while args:
++    assert args[0] == '--program'
++    n = args.index('--program', 1) if '--program' in args[1:] else len(args)
++    name, symbol, *sources = args[1:n]
++    aliases = set()
++    for s in sources:
++        if s.endswith('.c'):
++            with open(s, errors='replace') as f:
++                aliases |= set(re.findall(r'invoked_as\(argv, "([^"]+)"\)', f.read()))
++    programs.append((name, symbol, sorted(aliases)))
++    args = args[n:]
++
++with open(output, 'w') as f:
++    f.write('#include <limits.h>\n#include <stdio.h>\n#include <string.h>\n#include <unistd.h>\n\n')
++    f.writelines(f'int {s}(int, char *[]);\n' for _, s, _ in programs)
++    f.write('\ntypedef int (*main_t)(int, char *[]);\n'
++            'static const struct { const char *name; main_t main; } programs[] = {\n')
++    f.writelines(f'        {{ "{n}", {s} }},\n' for n, s, _ in programs)
++    f.write('}, aliases[] = {\n')
++    f.writelines(f'        {{ "{a}", {s} }},\n' for _, s, al in programs for a in al)
++    f.write('''};
++
++static const char *base(const char *path) {
++        const char *slash = strrchr(path, '/');
++        return slash ? slash + 1 : path;
++}
++
++static main_t program(const char *path) {
++        for (size_t i = 0; i < sizeof programs / sizeof programs[0]; i++)
++                if (strcmp(base(path), programs[i].name) == 0)
++                        return programs[i].main;
++        return NULL;
++}
++
++int main(int argc, char *argv[]) {
++        char path[PATH_MAX], target[PATH_MAX];
++        main_t m;
++
++        if (strchr(argv[0], '/') && strlen(argv[0]) < sizeof path) {
++                strcpy(path, argv[0]);
++                for (int i = 0; i < 40; i++) {
++                        if ((m = program(path)))
++                                return m(argc, argv);
++                        ssize_t n = readlink(path, target, sizeof target - 1);
++                        if (n < 0)
++                                break;
++                        target[n] = 0;
++                        char *slash = strrchr(path, '/');
++                        if (target[0] == '/')
++                                strcpy(path, target);
++                        else if (slash && (size_t) (slash + 1 - path) + (size_t) n < sizeof path)
++                                strcpy(slash + 1, target);
++                        else
++                                break;
++                }
++        }
++        if ((m = program(argv[0])))
++                return m(argc, argv);
++        for (size_t i = 0; i < sizeof aliases / sizeof aliases[0]; i++)
++                if (strstr(base(argv[0]), aliases[i].name))
++                        return aliases[i].main(argc, argv);
++        fprintf(stderr, "%s: not a program of this multicall binary\\n", base(argv[0]));
++        return 127;
++}
++''')
+diff --git a/tools/meson.build b/tools/meson.build
+index 49ceac9ca6..426efee7d6 100644
+--- a/tools/meson.build
++++ b/tools/meson.build
+@@ -10,6 +10,7 @@ elf2efi_py                     = files('elf2efi.py')
+ dbus_exporter_py               = files('dbus_exporter.py')
+ find_unused_library_symbols_py = files('find-unused-library-symbols.py')
+ generate_gperfs                = files('generate-gperfs.py')
++generate_multicall_dispatch_py = files('generate-multicall-dispatch.py')
+ git_contrib_sh                 = files('git-contrib.sh')
+ make_autosuspend_rules_py      = files('make-autosuspend-rules.py')
+ make_directive_index_py        = files('make-directive-index.py')
+@@ -18,6 +19,7 @@ meson_build_sh                 = files('meson-build.sh')
+ meson_extract_unit_files_py    = files('meson-extract-unit-files.py')
+ meson_render_jinja2_py         = files('meson-render-jinja2.py')
+ msgmerge_no_fuzzy_py           = files('msgmerge-no-fuzzy.py')
++multicall_relink_py            = files('multicall-relink.py')
+ sync_docs_py                   = files('sync-docs.py')
+ update_dbus_docs_py            = files('update-dbus-docs.py')
+ update_hwdb_autosuspend_sh     = files('update-hwdb-autosuspend.sh')
+diff --git a/tools/multicall-relink.py b/tools/multicall-relink.py
+new file mode 100755
+index 0000000000..22010745de
+--- /dev/null
++++ b/tools/multicall-relink.py
+@@ -0,0 +1,37 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: LGPL-2.1-or-later
++#
++# Partially link one program's objects into a single object for the multicall binary. Its main() is
++# renamed to the given symbol, and every other symbol it defines is made local, so that programs cannot
++# collide with each other. The __sd_dlopen_anchor_* symbols stay global: they belong to COMDAT groups that
++# are meant to be merged across the whole link.
++
++import subprocess
++import sys
++
++output, symbol, objcopy, lto, *rest = sys.argv[1:]
++sep = rest.index('--')
++cc, objects = rest[:sep], rest[sep + 1:]
++
++if lto == '--lto':
++    # Code-generate the program's LTO bytecode into a regular relocatable object, whose symbols can be renamed.
++    lto_args = ['-flto=auto', '-flinker-output=nolto-rel']
++else:
++    lto_args = ['-fno-lto']
++
++subprocess.run([*cc, '-r', '-nostdlib', *lto_args, '-o', output, *objects], check=True)
++# A program walks its options, verbs and static destructors from __start_X to __stop_X, which the final link
++# defines around section X: were X shared, the program would walk every program's entries. Its references are
++# still undefined here, and so can follow X to a section of the program's own, X_<program>. The libraries'
++# entries, which library code walks, keep the shared sections, as does SYSTEMD_BUS_ERROR_MAP, which is meant
++# to be shared.
++program = symbol.removeprefix('sd_main_')
++registries = [f'--{option}={prefix}{x}={prefix}{x}_{program}'
++              for x in ('SYSTEMD_OPTIONS', 'SYSTEMD_VERBS', 'SYSTEMD_STATIC_DESTRUCT')
++              for option, prefix in (('rename-section', ''), ('redefine-sym', '__start_'),
++                                     ('redefine-sym', '__stop_'))]
++# The bytecode of fat LTO objects would be carried along under the original symbol names; drop it.
++subprocess.run([objcopy, *registries, f'--redefine-sym=main={symbol}', '--wildcard',
++                f'--keep-global-symbol={symbol}', '--keep-global-symbol=__sd_dlopen_anchor_*',
++                '--remove-section=.gnu.lto_*', '--remove-section=.gnu.debuglto_*', output],
++               check=True)
+-- 
+2.54.0
+

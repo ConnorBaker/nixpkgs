@@ -1,0 +1,94 @@
+From 1434415dad39a44a2fe8ead54f7fe99e8ba3e00b Mon Sep 17 00:00:00 2001
+From: Connor Baker <ConnorBaker01@gmail.com>
+Date: Mon, 28 Sep 2026 08:34:49 +0000
+Subject: [PATCH 1/4] meson: link the libraries systemd dlopen()s into static
+ builds
+
+A static build cannot dlopen() libraries, so with -Dbuild-static the
+features built on them (mount units via libmount, SystemCallFilter= via
+libseccomp, ACLs, compression, cryptsetup, TPM2, ...) are disabled at
+runtime. Link the full libraries instead of only their headers, so that
+the wrappers can bind the linked-in symbols directly (next commit).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01AmfsFKaDy2jArNArKVsUhq
+---
+ src/basic/meson.build  |  2 ++
+ src/locale/meson.build |  1 +
+ src/shared/meson.build | 35 +++++++++++++++++++++++++++++++++++
+ 3 files changed, 38 insertions(+)
+
+diff --git a/src/basic/meson.build b/src/basic/meson.build
+index 6f59596b06..0eb6739ccd 100644
+--- a/src/basic/meson.build
++++ b/src/basic/meson.build
+@@ -216,6 +216,8 @@ libbasic_static = static_library(
+                         libxz_cflags,
+                         libz_cflags,
+                         libzstd_cflags,
++                        # Static builds link the libraries that are otherwise dlopen()ed.
++                        get_option('build-static') ? [libbzip2, liblz4, libxz, libz, libzstd] : [],
+                         userspace],
+         c_args : ['-fvisibility=default'],
+         build_by_default : false)
+diff --git a/src/locale/meson.build b/src/locale/meson.build
+index 04fd5b1d5d..f31ab87b0a 100644
+--- a/src/locale/meson.build
++++ b/src/locale/meson.build
+@@ -19,6 +19,7 @@ localectl_sources = files('localectl.c')
+ if conf.get('HAVE_XKBCOMMON') == 1
+         libxkbcommon_deps = [
+                 libxkbcommon_cflags,
++                get_option('build-static') ? libxkbcommon : [],
+         ]
+ else
+         libxkbcommon_deps = []
+diff --git a/src/shared/meson.build b/src/shared/meson.build
+index a8cea5b931..480d04000d 100644
+--- a/src/shared/meson.build
++++ b/src/shared/meson.build
+@@ -431,6 +431,41 @@ libshared_deps = [libacl_cflags,
+                   libzstd_cflags,
+                   tpm2_cflags]
+ 
++if get_option('build-static')
++        # Static builds link the libraries that are otherwise dlopen()ed.
++        libshared_deps += [libacl,
++                           libapparmor,
++                           libarchive,
++                           libaudit,
++                           libblkid,
++                           libbpf,
++                           libcrypt,
++                           libcryptsetup,
++                           libcurl,
++                           libdw,
++                           libelf,
++                           libfdisk,
++                           libfido2,
++                           libgnutls,
++                           libidn2,
++                           libkmod,
++                           libmicrohttpd,
++                           libmount,
++                           libopenssl,
++                           libp11kit,
++                           libpam,
++                           libpcre2,
++                           libpwquality,
++                           libqrencode,
++                           libseccomp,
++                           libselinux,
++                           libxenctrl,
++                           tss2_esys,
++                           tss2_mu,
++                           tss2_rc,
++                           tss2_tcti_device]
++endif
++
+ libshared_sym_path = meson.current_source_dir() / 'libshared.sym'
+ libshared_build_dir = meson.current_build_dir()
+ 
+-- 
+2.54.0
+
