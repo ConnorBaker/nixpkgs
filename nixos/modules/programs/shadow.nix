@@ -178,8 +178,10 @@ in
     {
       assertions = [
         {
-          assertion = config.security.shadow.enable || config.services.greetd.enable;
-          message = "You must enable at least one VT login method, either security.shadow.enable or services.greetd.enable";
+          # getty runs shadow's login; a system without getty has no VT login to provide.
+          assertion =
+            !config.services.getty.enable || config.security.shadow.enable || config.services.greetd.enable;
+          message = "You must enable at least one VT login method, either security.shadow.enable or services.greetd.enable, or disable services.getty";
         }
       ];
     }
