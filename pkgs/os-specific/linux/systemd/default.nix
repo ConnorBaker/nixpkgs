@@ -711,6 +711,7 @@ stdenv.mkDerivation (finalAttrs: {
       withMachined
       withNetworkd
       withNspawn
+      withPam
       withRepart
       withPortabled
       withSysupdate
