@@ -325,8 +325,8 @@ in
         ${optionalString systemd.withPortabled ''ln -s "${systemd}/example/tmpfiles.d/portables.conf"''}
         ln -s "${systemd}/example/tmpfiles.d/static-nodes-permissions.conf"
         ln -s "${systemd}/example/tmpfiles.d/systemd.conf"
-        ln -s "${systemd}/example/tmpfiles.d/systemd-nologin.conf"
-        ln -s "${systemd}/example/tmpfiles.d/systemd-nspawn.conf"
+        ${optionalString systemd.withPam ''ln -s "${systemd}/example/tmpfiles.d/systemd-nologin.conf"''}
+        ${optionalString systemd.withMachined ''ln -s "${systemd}/example/tmpfiles.d/systemd-nspawn.conf"''}
         ln -s "${systemd}/example/tmpfiles.d/systemd-tmp.conf"
         ln -s "${systemd}/example/tmpfiles.d/tmp.conf"
         ln -s "${systemd}/example/tmpfiles.d/var.conf"
