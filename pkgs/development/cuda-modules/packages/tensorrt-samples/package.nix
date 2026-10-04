@@ -127,6 +127,10 @@ backendStdenv.mkDerivation (finalAttrs: {
         tag = "v11.0";
         hash = "sha256-xbGMxCSDTixR0fOoOABWyEVE4S9x031L3i5KQwPu24Y=";
       };
+      "11.1.0" = {
+        tag = "v11.1";
+        hash = "sha256-b+vpN/LTTbE1N/qQ/+1u78YmaVf6vvbg1XtFjQJkwTs=";
+      };
       "11.3.0" = {
         tag = "v11.3";
         hash = "sha256-U52/Pyd+94taV+yhfxseUdyY5lLwOcxBPIwDatjr6gs=";
@@ -176,8 +180,8 @@ backendStdenv.mkDerivation (finalAttrs: {
     # Build configuration
     (cmakeFeature "GPU_ARCHS" (replaceStrings [ ";" ] [ " " ] flags.cmakeCudaArchitecturesString))
   ]
-  # The samples fetch nlohmann_json with FetchContent as of 11.3.
-  ++ lib.optionals (lib.versionAtLeast finalAttrs.version "11.3") [
+  # The samples fetch nlohmann_json with FetchContent as of 11.1.
+  ++ lib.optionals (lib.versionAtLeast finalAttrs.version "11.1") [
     (cmakeFeature "FETCHCONTENT_SOURCE_DIR_NLOHMANN_JSON" "${nlohmann_json.src}")
   ];
 
