@@ -92,7 +92,8 @@ in
                 echo "Unable to determine mmap_rnd_compat_bits_max. Check your kernel configfile is valid."
                 exit 1
               fi
-              echo "vm.mmap_rnd_compat_bits=$mmap_rnd_compat_bits_max" >> $out
+              # "-": the sysctl exists only with support for 32-bit programs (COMPAT), which a kernel may lack.
+              echo "-vm.mmap_rnd_compat_bits=$mmap_rnd_compat_bits_max" >> $out
             ''
           );
       "sysctl.d/60-nixos.conf".text = lib.concatStrings (
