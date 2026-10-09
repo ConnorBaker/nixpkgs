@@ -157,13 +157,15 @@ in
 
           # Make the source files writable before executing sysusers.
           ExecStartPre = lib.mkIf (!userCfg.mutableUsers) (
-            lib.map (file: "-${pkgs.util-linux}/bin/umount ${passwordFilesLocation}/${file}") passwordFiles
+            lib.map (
+              file: "-${config.systemd.package.util-linux}/bin/umount ${passwordFilesLocation}/${file}"
+            ) passwordFiles
           );
           # Make the source files read-only after sysusers has finished.
           ExecStartPost = lib.mkIf (!userCfg.mutableUsers) (
             lib.map (
               file:
-              "${pkgs.util-linux}/bin/mount --bind -o ro ${passwordFilesLocation}/${file} ${passwordFilesLocation}/${file}"
+              "${config.systemd.package.util-linux}/bin/mount --bind -o ro ${passwordFilesLocation}/${file} ${passwordFilesLocation}/${file}"
             ) passwordFiles
           );
 
