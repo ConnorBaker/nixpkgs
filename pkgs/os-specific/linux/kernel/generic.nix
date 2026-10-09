@@ -159,6 +159,7 @@ lib.makeOverridable (
       lib.concatStringsSep "\n" ([ baseConfigStr ] ++ configFromPatches);
 
     withRust = ((configfile.moduleStructuredConfig.settings.RUST or { }).tristate or null) == "y";
+    withModules = ((configfile.moduleStructuredConfig.settings.MODULES or { }).tristate or null) != "n";
 
     configfile = stdenv.mkDerivation {
       inherit
@@ -303,7 +304,7 @@ lib.makeOverridable (
         pos = builtins.unsafeGetAttrPos "version" args;
 
         config = {
-          CONFIG_MODULES = "y";
+          CONFIG_MODULES = if withModules then "y" else "n";
           CONFIG_FW_LOADER = "y";
           CONFIG_RUST = if withRust then "y" else "n";
         };
