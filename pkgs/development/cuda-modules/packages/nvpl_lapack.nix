@@ -1,4 +1,9 @@
-{ buildRedist, nvpl_blas }:
+{
+  backendStdenv,
+  buildRedist,
+  lib,
+  nvpl_blas,
+}:
 buildRedist {
   redistName = "nvpl";
   pname = "nvpl_lapack";
@@ -11,6 +16,9 @@ buildRedist {
   ];
 
   buildInputs = [ nvpl_blas ];
+
+  # The OpenMP interface layer dlopens libgomp.so.1 by bare soname.
+  appendRunpaths = [ "${lib.getLib backendStdenv.cc.cc}/lib" ];
 
   # The CMake config finds headers and libraries with find_path(... NO_DEFAULT_PATH) relative to the config file itself,
   # which lives in a different output; point the search prefix at the include and lib outputs instead.
