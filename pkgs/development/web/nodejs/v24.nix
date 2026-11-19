@@ -50,6 +50,9 @@ buildNodejs {
       ./bin-sh-node-run-v22.patch
       ./use-nix-codesign.patch
     ]
+    ++ lib.optionals (stdenv.buildPlatform.canExecute stdenv.hostPlatform) [
+      ./non-utf8-filenames.patch
+    ]
     ++ gypPatches
     ++ lib.optionals (!stdenv.buildPlatform.isDarwin) [
       # test-icu-env is failing without the reverts
