@@ -1,8 +1,10 @@
 {
   lib,
   stdenv,
+  pkgsHostHost,
   config,
   buildPythonPackage,
+  callPackage,
   fetchFromGitHub,
   pythonAtLeast,
 
@@ -33,7 +35,6 @@
   filelock,
 
   # passthru
-  callPackage,
   python,
   pytestCheckHook,
   torchWithRocm,
@@ -45,9 +46,17 @@
 }:
 
 let
-  effectiveStdenv = if cudaSupport then cudaPackages.backendStdenv else stdenv;
+  # The build compiler runs on BUILD; the installed JIT compiles and loads C
+  # extensions on HOST. Select that compiler's HOST/HOST role explicitly.
+  runtimeCC =
+    if lib.systems.equals stdenv.buildPlatform stdenv.hostPlatform then
+      stdenv.cc
+    else
+      pkgsHostHost.targetPackages.stdenv.cc;
+  runtimeCCExe = lib.getExe' runtimeCC "${runtimeCC.targetPrefix}cc";
+  runtimeCXXExe = lib.getExe' runtimeCC "${runtimeCC.targetPrefix}c++";
 in
-buildPythonPackage.override { stdenv = effectiveStdenv; } (finalAttrs: {
+buildPythonPackage (finalAttrs: {
   pname = "triton";
   version = "3.9.0";
   pyproject = true;
@@ -66,18 +75,15 @@ buildPythonPackage.override { stdenv = effectiveStdenv; } (finalAttrs: {
     })
     (replaceVars ./0002-nvidia-driver-short-circuit-before-ldconfig.patch {
       libcudaStubsDir =
-        if cudaSupport then "${lib.getOutput "stubs" cudaPackages.cuda_cudart}/lib/stubs" else null;
+        if cudaSupport then
+          "${lib.getOutput cudaPackages.cuda_cudart.outputStubs cudaPackages.cuda_cudart}/lib/stubs"
+        else
+          null;
     })
-
-    # Use our `cmakeFlags` instead and avoid downloading dependencies.
-    ./inject-nix-cmakeFlags.patch
   ]
   ++ lib.optionals cudaSupport [
     (replaceVars ./0003-nvidia-cudart-a-systempath.patch {
-      cudaToolkitIncludeDirs = "${lib.getInclude cudaPackages.cuda_cudart}/include";
-    })
-    (replaceVars ./0004-nvidia-allow-static-ptxas-path.patch {
-      nixpkgsExtraBinaryPaths = lib.escapeShellArgs [ (lib.getExe' cudaPackages.cuda_nvcc "ptxas") ];
+      cudaToolkitIncludeDirs = "${lib.getOutput cudaPackages.cuda_cudart.outputInclude cudaPackages.cuda_cudart}/include";
     })
   ];
 
@@ -130,7 +136,19 @@ buildPythonPackage.override { stdenv = effectiveStdenv; } (finalAttrs: {
       substituteInPlace python/triton/runtime/build.py \
         --replace-fail \
           'cc = os.environ.get("CC")' \
-          'cc = os.environ.get("CC", "${lib.getExe' effectiveStdenv.cc "cc"}")'
+          'cc = os.environ.get("CC", "${runtimeCCExe}")' \
+        --replace-fail \
+          'cxx = os.environ.get("CXX")' \
+          'cxx = os.environ.get("CXX", "${runtimeCXXExe}")'
+    ''
+
+    # MLIRConfig selects its imported mlir-tblgen executable, which runs on HOST.
+    # Table generation runs on BUILD, while MLIR's libraries still target HOST.
+    + lib.optionalString (!(lib.systems.equals stdenv.buildPlatform stdenv.hostPlatform)) ''
+      substituteInPlace CMakeLists.txt \
+        --replace-fail 'find_package(MLIR REQUIRED CONFIG PATHS ''${MLIR_DIR})' \
+          'find_package(MLIR REQUIRED CONFIG PATHS ''${MLIR_DIR})
+      set(MLIR_TABLEGEN_EXE "${lib.getExe' (llvm.__spliced.buildHost or llvm) "mlir-tblgen"}")'
     ''
 
     # AMDGPU code generation is dlopened from a standalone library, built separately.
@@ -159,11 +177,8 @@ buildPythonPackage.override { stdenv = effectiveStdenv; } (finalAttrs: {
     cmake
     ninja
 
-    # Note for future:
-    # These *probably* should go in depsTargetTarget
-    # ...but we cannot test cross right now anyway
-    # because we only support cudaPackages on x86_64-linux atm
     lit
+    # Native tools, including mlir-tblgen, run during the build.
     llvm
 
     # Upstream's setup.py tries to write cache somewhere in ~/
@@ -178,6 +193,14 @@ buildPythonPackage.override { stdenv = effectiveStdenv; } (finalAttrs: {
     # https://cmake.org/cmake/help/latest/command/find_package.html
     # https://github.com/triton-lang/triton/blob/c3c476f357f1e9768ea4e45aa5c17528449ab9ef/third_party/amd/CMakeLists.txt#L6
     (lib.cmakeFeature "LLD_DIR" "${lib.getLib llvm}/lib/cmake/lld")
+  ]
+  ++ lib.optionals (!(lib.systems.equals stdenv.buildPlatform stdenv.hostPlatform)) [
+    (lib.cmakeFeature "LLVM_DIR" "${lib.getLib llvm}/lib/cmake/llvm")
+    (lib.cmakeFeature "MLIR_DIR" "${lib.getLib llvm}/lib/cmake/mlir")
+    (lib.cmakeFeature "Python3_INCLUDE_DIR" "${lib.getInclude python}/include/${python.libPrefix}")
+    # The NVIDIA backend compiles its GSan device runtime with the clang++ in
+    # LLVM_SYSPATH, which is HOST's LLVM here; that compiler runs on BUILD.
+    (lib.cmakeFeature "TRITON_GSAN_CLANGXX" (lib.getExe' (llvm.__spliced.buildHost or llvm) "clang++"))
   ];
 
   buildInputs = [
@@ -185,7 +208,8 @@ buildPythonPackage.override { stdenv = effectiveStdenv; } (finalAttrs: {
     libxml2.dev
     ncurses
     zlib
-  ];
+  ]
+  ++ lib.optionals (!(lib.systems.equals stdenv.buildPlatform stdenv.hostPlatform)) [ llvm ];
 
   dependencies = [
     filelock
@@ -194,11 +218,17 @@ buildPythonPackage.override { stdenv = effectiveStdenv; } (finalAttrs: {
     setuptools
   ];
 
-  preConfigure =
-    # Ensure that the build process uses the requested number of cores
-    ''
-      export MAX_JOBS="$NIX_BUILD_CORES"
-    '';
+  preBuild = ''
+    export MAX_JOBS="$NIX_BUILD_CORES"
+    # setup.py configures CMake after preConfigure hooks have added their flags.
+    local tritonCmakeFlags=()
+    concatTo tritonCmakeFlags cmakeFlags cmakeFlagsArray
+    export TRITON_APPEND_CMAKE_ARGS="$(
+      ${python.pythonOnBuildForHost.interpreter} -c \
+        'import shlex, sys; print(shlex.join(sys.argv[1:]))' \
+        "''${tritonCmakeFlags[@]}"
+    )''${TRITON_APPEND_CMAKE_ARGS:+ $TRITON_APPEND_CMAKE_ARGS}"
+  '';
 
   # `examples/plugins` (an MLIR example dialect plugin and a unit-test helper lib) is built
   # unconditionally with the Python module and shipped into `triton/plugins/`.
@@ -206,6 +236,15 @@ buildPythonPackage.override { stdenv = effectiveStdenv; } (finalAttrs: {
   # fails the fixup phase.
   postInstall = ''
     rm -rf "$out/${python.sitePackages}/triton/plugins"
+  ''
+  + lib.optionalString cudaSupport ''
+    # Upstream resolves these tools relative to the installed NVIDIA backend.
+    local nvidiaBin="$out/${python.sitePackages}/triton/backends/nvidia/bin"
+    mkdir -p "$nvidiaBin"
+    ln -s ${lib.getExe' (lib.getOutput cudaPackages.cuda_nvcc.outputBin cudaPackages.cuda_nvcc) "ptxas"} "$nvidiaBin/ptxas"
+    ln -s ptxas "$nvidiaBin/ptxas-blackwell"
+    ln -s ${lib.getExe' (lib.getOutput cudaPackages.cuda_cuobjdump.outputBin cudaPackages.cuda_cuobjdump) "cuobjdump"} "$nvidiaBin/cuobjdump"
+    ln -s ${lib.getExe' (lib.getOutput cudaPackages.cuda_nvdisasm.outputBin cudaPackages.cuda_nvdisasm) "nvdisasm"} "$nvidiaBin/nvdisasm"
   '';
 
   env = {
@@ -220,14 +259,6 @@ buildPythonPackage.override { stdenv = effectiveStdenv; } (finalAttrs: {
       # https://gist.github.com/SomeoneSerge/7d390b2b1313957c378e99ed57168219#file-gistfile0-txt-L1042
       "-Wno-stringop-overread"
     ];
-
-    # TODO: Unused because of how TRITON_OFFLINE_BUILD currently works (subject to change)
-    TRITON_PTXAS_PATH = lib.getExe' cudaPackages.cuda_nvcc "ptxas"; # Make sure cudaPackages is the right version each update (See python/setup.py)
-    TRITON_CUOBJDUMP_PATH = lib.getExe' cudaPackages.cuda_cuobjdump "cuobjdump";
-    TRITON_NVDISASM_PATH = lib.getExe' cudaPackages.cuda_nvdisasm "nvdisasm";
-    TRITON_CUDACRT_PATH = lib.getInclude cudaPackages.cuda_nvcc;
-    TRITON_CUDART_PATH = lib.getInclude cudaPackages.cuda_cudart;
-    TRITON_CUPTI_PATH = cudaPackages.cuda_cupti;
   };
 
   pythonRemoveDeps = [
@@ -261,7 +292,7 @@ buildPythonPackage.override { stdenv = effectiveStdenv; } (finalAttrs: {
       tritonVersion = finalAttrs.version;
     };
 
-    gpuCheck = effectiveStdenv.mkDerivation {
+    gpuCheck = stdenv.mkDerivation {
       pname = "triton-pytest";
       inherit (triton) version src;
 
@@ -297,12 +328,6 @@ buildPythonPackage.override { stdenv = effectiveStdenv; } (finalAttrs: {
         # Expected line "pid (0, 0, 0) idx ( 0,   0) x: 1" 1 time(s), but saw 0 time(s)
         # ...
         "test_print"
-
-        # This test ensures that the ptxas binary is available under .../site-packages/triton/backends/nvidia/bin/ptxas
-        # Usually, this is where the install script downloads and copies ptxas to.
-        # However, this is not the case here, as triton is built with TRITON_OFFLINE_BUILD=1
-        # and TRITON_PTXAS_PATH=<path_to_nix_store_ptxas>
-        "test_nvidia_tool"
 
         # Assertion `ctaLayout.getNumOutDims() == rank' failed in
         # TritonGPUAccelerateMatmul on Blackwell (compute capability 12.0).
@@ -434,8 +459,6 @@ buildPythonPackage.override { stdenv = effectiveStdenv; } (finalAttrs: {
             if __name__ == "__main__":
               if os.environ.get("HOME", None) == "/homeless-shelter":
                 os.environ["HOME"] = os.environ.get("TMPDIR", "/tmp")
-              if "CC" not in os.environ:
-                os.environ["CC"] = "${lib.getExe' effectiveStdenv.cc "cc"}"
               torch.manual_seed(0)
               size = 12345
               x = torch.rand(size, device='cuda')
@@ -445,6 +468,12 @@ buildPythonPackage.override { stdenv = effectiveStdenv; } (finalAttrs: {
               assert output_torch.sub(output_triton).abs().max().item() < 1e-6
               print("Triton axpy: OK")
           '';
+    }
+    // lib.optionalAttrs (stdenv.buildPlatform.canExecute stdenv.hostPlatform) {
+      runtime-compilers = callPackage ./runtime-compiler-test.nix {
+        inherit python;
+        triton = finalAttrs.finalPackage;
+      };
     };
   };
 

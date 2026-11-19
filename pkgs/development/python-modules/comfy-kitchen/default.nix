@@ -8,6 +8,7 @@
   fetchFromGitHub,
   nanobind,
   ninja,
+  packaging,
   setuptools,
   torch,
   comfyui,
@@ -59,26 +60,22 @@ buildPythonPackage (finalAttrs: {
     setuptools
   ];
 
-  dependencies = [ torch ];
+  nativeBuildInputs = lib.optionals cudaSupport [ cudaPackages.cuda_nvcc ];
+
+  dependencies = [
+    packaging
+    torch
+  ];
 
   dontUseCmakeConfigure = true;
 
   pypaBuildFlags =
-    if cudaSupport || rocmSupport then
-      lib.optionals cudaSupport [
-        ''--config-setting=--cuda-archs="${
-          lib.concatMapStringsSep ";" cudaPackages.flags.dropDots torch.cudaCapabilities
-        }"''
-      ]
-      ++ lib.optionals rocmSupport [
-        "-C--global-option=--hip"
-      ]
-    else
-      [ "-C--global-option=--no-cuda" ];
+    lib.optional rocmSupport "-C--global-option=--hip"
+    ++ lib.optional (!cudaSupport && !rocmSupport) "-C--global-option=--no-cuda";
 
   env =
     lib.optionalAttrs cudaSupport {
-      CUDA_HOME = cudaPackages.cuda_nvcc;
+      COMFY_CUDA_ARCHS = lib.concatMapStringsSep ";" cudaPackages.flags.dropDots torch.cudaCapabilities;
     }
     // lib.optionalAttrs rocmSupport {
       ROCM_HOME = rocm-sdk;

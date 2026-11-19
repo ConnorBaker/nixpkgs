@@ -64,7 +64,7 @@ in
   inherit tester-mps;
   mps = tester-mps.gpuCheck;
 
-  cpp-extension = callPackage ./cpp-extension.nix { };
+  cpp-extension = callPackage ./cpu-cpp-extension.nix { };
 
   mnist-example = callPackage ./mnist-example { };
 

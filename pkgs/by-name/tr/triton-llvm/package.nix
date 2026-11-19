@@ -57,9 +57,10 @@ let
 
   # This LLVM version can't seem to find pygments/pyyaml,
   # but a later update will likely fix this (triton-2.1.0)
+  # Select the build interpreter before calling the unspliced environment constructor.
   python =
     if buildTests then
-      python3Packages.python.withPackages (
+      python3Packages.python.pythonOnBuildForHost.withPackages (
         p: with p; [
           psutil
           pygments

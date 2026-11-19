@@ -1,6 +1,7 @@
 {
   lib,
   stdenv,
+  pkgsBuildBuild,
   fetchFromGitHub,
   cmake,
   ninja,
@@ -15,6 +16,9 @@
 # statically against its own (separately pinned) LLVM so its option registry stays independent
 # of the LLVM used by triton's core library.
 # https://github.com/triton-lang/triton/pull/11485
+let
+  nativeCC = pkgsBuildBuild.targetPackages.stdenv.cc;
+in
 stdenv.mkDerivation (finalAttrs: {
   pname = "triton-amd-codegen";
   version = tritonVersion;
@@ -47,7 +51,6 @@ stdenv.mkDerivation (finalAttrs: {
     (lib.cmakeFeature "CMAKE_BUILD_TYPE" "Release")
     (lib.cmakeFeature "LLVM_TARGETS_TO_BUILD" "AMDGPU")
     (lib.cmakeFeature "LLVM_ENABLE_PROJECTS" "")
-    (lib.cmakeFeature "LLVM_DISTRIBUTION_COMPONENTS" "llvm-headers;llvm-libraries;cmake-exports")
     (lib.cmakeBool "LLVM_BUILD_TOOLS" false)
     (lib.cmakeBool "LLVM_BUILD_UTILS" false)
     (lib.cmakeBool "LLVM_INCLUDE_TESTS" false)
@@ -61,24 +64,30 @@ stdenv.mkDerivation (finalAttrs: {
     (lib.cmakeBool "LLVM_ENABLE_ZLIB" false)
     (lib.cmakeBool "LLVM_ENABLE_ZSTD" false)
     (lib.cmakeBool "LLVM_ENABLE_LIBXML2" false)
-  ];
-
-  # The static LLVM SDK is only needed to build the codegen library, keep it out of $out
-  preConfigure = ''
-    appendToVar cmakeFlags "-DCMAKE_INSTALL_PREFIX=$NIX_BUILD_TOP/llvm-sdk"
-  '';
+  ]
+  ++ lib.optional (!lib.systems.equals stdenv.buildPlatform stdenv.hostPlatform) (
+    lib.cmakeOptionType "list" "CROSS_TOOLCHAIN_FLAGS_NATIVE" (
+      lib.concatStringsSep ";" [
+        (lib.cmakeFeature "CMAKE_C_COMPILER" "${nativeCC}/bin/${nativeCC.targetPrefix}cc")
+        (lib.cmakeFeature "CMAKE_CXX_COMPILER" "${nativeCC}/bin/${nativeCC.targetPrefix}c++")
+      ]
+    )
+  );
 
   buildPhase = ''
     runHook preBuild
 
-    ninja -j$NIX_BUILD_CORES install-distribution
+    # Consume LLVM's build-tree package so its headers and archives stay in the build directory.
+    ninja -j$NIX_BUILD_CORES llvm-headers llvm-libraries
+
+    local codegenCmakeFlags=()
+    concatTo codegenCmakeFlags cmakeFlags cmakeFlagsArray
 
     cmake -G Ninja \
       -S ${tritonSrc}/third_party/amd/backend/codegen \
       -B codegen-build \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_INSTALL_PREFIX=$out \
-      -DLLVM_DIR=$NIX_BUILD_TOP/llvm-sdk/lib/cmake/llvm \
+      "''${codegenCmakeFlags[@]}" \
+      -DLLVM_DIR="$PWD/lib/cmake/llvm" \
       -DTRITON_AMD_LLVM_REVISION=${finalAttrs.src.rev}-${toString finalAttrs.llvmBuildNumber}
     ninja -C codegen-build -j$NIX_BUILD_CORES
 
