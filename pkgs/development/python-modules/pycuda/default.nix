@@ -62,6 +62,8 @@ buildPythonPackage (finalAttrs: {
 
   patches = [
     ./runtime-compiler.patch
+    ./managed-memory-defaults.patch
+    ./curand-buffer-validation.patch
   ];
 
   prePatch = ''
@@ -199,6 +201,10 @@ buildPythonPackage (finalAttrs: {
         ];
       }
       // lib.optionalAttrs (stdenvNoCC.buildPlatform.canExecute stdenvNoCC.hostPlatform) {
+        curandBuffers = python.pkgs.callPackage ./curand-buffer-test.nix {
+          pycuda = finalAttrs.finalPackage;
+          inherit cudaPackages;
+        };
         jit = python.pkgs.callPackage ./jit-test.nix {
           pycuda = finalAttrs.finalPackage;
           inherit cudaPackages;
