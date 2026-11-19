@@ -2,38 +2,11 @@
 #
 # See comments in cc-wrapper's setup hook. This works exactly the same way.
 
-# Skip setup hook if we're neither a build-time dep, nor, temporarily, doing a
-# native compile.
-#
-# TODO(@Ericson2314): No native exception
-[[ -z ${strictDeps-} ]] || (( "$hostOffset" < 0 )) || return 0
-
-bintoolsWrapper_addLDVars () {
-    # See ../setup-hooks/role.bash
-    local role_post
-    getHostRoleEnvHook
-
-    if [[ -d "$1/lib64" && ! -L "$1/lib64" ]]; then
-        export NIX_LDFLAGS${role_post}+=" -L$1/lib64"
-    fi
-
-    if [[ -d "$1/lib" ]]; then
-        # Don't add the /lib directory if it actually doesn't contain any libraries. For instance,
-        # Python and Haskell packages often only have directories like $out/lib/ghc-8.4.3/ or
-        # $out/lib/python3.6/, so having them in LDFLAGS just makes the linker search unnecessary
-        # directories and bloats the size of the environment variable space.
-        local -a glob=( $1/lib/lib* )
-        if [ "${#glob[*]}" -gt 0 ]; then
-            export NIX_LDFLAGS${role_post}+=" -L$1/lib"
-        fi
-    fi
-}
-
 # See ../setup-hooks/role.bash
 getTargetRole
 getTargetRoleWrapper
 
-addEnvHooks "$targetOffset" bintoolsWrapper_addLDVars
+source @out@/nix-support/add-env-hooks.sh
 
 # shellcheck disable=SC2157
 if [ -n "@bintools_bin@" ]; then
@@ -41,8 +14,8 @@ if [ -n "@bintools_bin@" ]; then
 fi
 
 # shellcheck disable=SC2157
-if [ -n "@libc_bin@" ]; then
-    addToSearchPath _PATH @libc_bin@/bin
+if [ -n "@libc_bin_for_host@" ]; then
+    addToSearchPath _PATH @libc_bin_for_host@/bin
 fi
 
 # shellcheck disable=SC2157
@@ -75,9 +48,9 @@ then
     unset -v windres_var
 fi
 
-# If unset, assume the default hardening flags.
-: ${NIX_HARDENING_ENABLE="@default_hardening_flags_str@"}
-export NIX_HARDENING_ENABLE
+if [[ -z $role_post ]]; then
+    source @out@/nix-support/set-default-hardening.sh
+fi
 
 # No local scope in sourced file
 unset -v role_post cmd upper_case

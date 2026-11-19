@@ -187,8 +187,8 @@ stdenv.mkDerivation {
       echo "checking whether ld-wrapper keeps symlinks between store paths in the rpath... " >&2
       # Resolving them adds references to their targets (issue #454199).
       ${CC} -L${fooLinks}/lib -lfoo -o store-symlink-rpath-check ${./ldflags-main.c}
-      ${READELF} -d store-symlink-rpath-check | grep -F "${fooLinks}/lib"
-      ! ${READELF} -d store-symlink-rpath-check | grep -F "${fooLib}/lib"
+      dynamicTags=$(${READELF} -d store-symlink-rpath-check)
+      [[ $dynamicTags == *"${fooLinks}/lib"* && $dynamicTags != *"${fooLib}/lib"* ]]
       ${emulator} ./store-symlink-rpath-check
 
       echo "checking whether ld-wrapper recognizes a store whose parent is a symlink... " >&2
@@ -204,18 +204,29 @@ stdenv.mkDerivation {
       done
 
       echo "checking whether ld-wrapper resolves relative -L directories from the working directory... " >&2
-      # gcc joins -L with a relative directory, which ld-wrapper ignores, so
-      # pass them to ld separately, as a direct call to ld might.
       checkRelative() {
-        (cd "$1" && ${CC} -Wl,-L,"$2" -lfoo -o "$NIX_BUILD_TOP/relative-rpath-check" ${./ldflags-main.c})
-        ${READELF} -d relative-rpath-check | grep -F "${fooLib}/lib"
-        ${emulator} ./relative-rpath-check
+        local flags
+        for flags in "-L$2" "-Wl,-L,$2"; do
+          (cd "$1" && ${CC} "$flags" -lfoo -o "$NIX_BUILD_TOP/relative-rpath-check" ${./ldflags-main.c})
+          ${READELF} -d relative-rpath-check | grep -F "${fooLib}/lib"
+          ${emulator} ./relative-rpath-check
+        done
       }
       checkRelative ${fooLib} lib
       checkRelative ${fooLib} ./lib
       checkRelative ${fooLib}/lib .
       checkRelative "$NIX_BUILD_TOP/links" foo-abs
       checkRelative "$NIX_BUILD_TOP/links/sub" foo-rel
+
+      ${lib.optionalString ((stdenv.cc.bintools.linkerFlavor or "") == "bfd") ''
+        # BFD resolves =/lib against its sysroot even when ./=/lib exists.
+        mkdir -p empty-sysroot/lib '='
+        ln -s ${fooLinks}/lib '=/lib'
+        ${CC} -Wl,--sysroot="$PWD/empty-sysroot",-L,=/lib -L${fooLib}/lib -lfoo -o sysroot-check ${./ldflags-main.c}
+        ${READELF} -d sysroot-check > sysroot.dynamic
+        grep -F "${fooLib}/lib" sysroot.dynamic
+        if grep -F "${fooLinks}/lib" sysroot.dynamic; then exit 1; fi
+      ''}
     ''}
 
     echo "Check whether -nostdinc and -nostdinc++ is handled correctly" >&2
@@ -234,6 +245,17 @@ stdenv.mkDerivation {
 
     echo "Check whether CC and LD with NIX_X_USE_RESPONSE_FILE hardcodes all required binaries..." >&2
     NIX_CC_USE_RESPONSE_FILE=1 NIX_LD_USE_RESPONSE_FILE=1 ${CC} -v
+
+    ${import ./linker-policy.nix {
+      inherit
+        lib
+        stdenv
+        CC
+        emulator
+        fooLib
+        staticLibc
+        ;
+    }}
 
     touch $out
   '';

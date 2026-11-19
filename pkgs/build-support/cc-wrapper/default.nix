@@ -126,6 +126,9 @@ let
   ccName = removePrefix targetPrefix (getName cc);
 
   libc_bin = optionalString (libc != null) (getBin libc);
+  # libc's tools run on TARGET, while this wrapper runs on HOST. Keep the
+  # unfiltered libc_bin metadata for consumers that install TARGET paths.
+  libc_bin_for_host = optionalString (hostPlatform.canExecute targetPlatform) libc_bin;
   libc_dev = optionalString (libc != null) (getDev libc);
   libc_lib = optionalString (libc != null) (getLib libc);
   cc_solib =
@@ -147,14 +150,14 @@ let
     replaceStrings [ "-" "." ] [ "_" "_" ] targetPlatform.config
     + lib.optionalString (targetPlatform.isDarwin && targetPlatform.isStatic) "_static";
 
-  useGccForLibs =
-    useCcForLibs
-    && libcxx == null
-    && !targetPlatform.isDarwin
-    && !(targetPlatform.useLLVM or false)
-    && !(targetPlatform.useAndroidPrebuilt or false)
-    && !(targetPlatform.isiOS or false)
-    && gccForLibs != null;
+  useGccForLibs = import ./use-gcc-for-libs.nix {
+    inherit
+      useCcForLibs
+      libcxx
+      gccForLibs
+      targetPlatform
+      ;
+  };
   gccForLibs_solib =
     getLib gccForLibs + optionalString (targetPlatform != hostPlatform) "/${targetPlatform.config}";
 
@@ -417,6 +420,11 @@ let
   useMacroPrefixMap = !isGNU && !isFlang;
   systemIncludeFlag = if isFlang || isArocc then "-I" else "-idirafter";
   fortifyIncludeFlag = if isFlang then "-I" else "-isystem";
+  hasC = cc.langC or true;
+  windowsDllHooks = optional (targetPlatform.isWindows || targetPlatform.isCygwin) (
+    if targetPlatform.isCygwin then ./cygwin-dll-hook.sh else ./windows-dll-hook.sh
+  );
+
 in
 
 assert includeFortifyHeaders' -> fortify-headers != null;
@@ -449,6 +457,9 @@ stdenvNoCC.mkDerivation {
       cc
       libc
       libcxx
+      gccForLibs
+      useCcForLibs
+      useGccForLibs
       nativeTools
       nativeLibc
       nativePrefix
@@ -511,21 +522,27 @@ stdenvNoCC.mkDerivation {
   installPhase = ''
     mkdir -p $out/bin $out/nix-support
 
+    substituteAll ${../wrapper-common/set-default-hardening.sh} "$out/nix-support/set-default-hardening.sh"
+    substituteAll ${./add-env-hooks.sh} "$out/nix-support/add-env-hooks.sh"
+
     wrap() {
       local dst="$1"
       local wrapper="$2"
       export prog="$3"
+      export wrapperMode=fresh
       export use_response_file_by_default=${if isClang && !isCcache then "1" else "0"}
       substituteAll "$wrapper" "$out/bin/$dst"
       chmod +x "$out/bin/$dst"
     }
 
+    macroPrefixMap() {
+      local scrubbed="$NIX_STORE/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-''${1#"$NIX_STORE"/*-}"
+      printf -- '-fmacro-prefix-map=%s=%s\n' "$1" "$scrubbed"
+    }
+
     include() {
       printf -- '%s %s\n' "$1" "$2"
-      ${lib.optionalString useMacroPrefixMap ''
-        local scrubbed="$NIX_STORE/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-''${2#"$NIX_STORE"/*-}"
-        printf -- '-fmacro-prefix-map=%s=%s\n' "$2" "$scrubbed"
-      ''}
+      ${lib.optionalString useMacroPrefixMap ''macroPrefixMap "$2"''}
     }
   ''
 
@@ -592,9 +609,21 @@ stdenvNoCC.mkDerivation {
 
   # No need to wrap gnat, gnatkr, gnatname or gnatprep; we can just symlink them in
   + optionalString cc.langAda or false ''
+    mkdir -p $out/nix-support/bin
+    export targetPrefix=${targetPrefix}
     for cmd in gnatbind gnatchop gnatclean gnatlink gnatls gnatmake; do
       wrap ${targetPrefix}$cmd ${./gnat-wrapper.sh} $ccPath/${targetPrefix}$cmd
+      export wrapperMode=prepared
+      substituteAll ${./gnat-wrapper.sh} $out/nix-support/bin/$cmd
+      chmod +x $out/nix-support/bin/$cmd
     done
+
+    # GNAT's compiler option accepts one executable, while the shared prepared
+    # compiler entry also takes the selected raw compiler as its first argument.
+    printf '#! %s\nexec %q %q "$@"\n' "$shell" \
+      "$out/nix-support/compiler" "$ccPath/${targetPrefix}gcc${exeSuffix}" \
+      > $out/nix-support/bin/gcc
+    chmod +x $out/nix-support/bin/gcc
 
     for cmd in gnat gnatkr gnatname gnatprep; do
       ln -s $ccPath/${targetPrefix}$cmd $out/bin/${targetPrefix}$cmd
@@ -633,34 +662,16 @@ stdenvNoCC.mkDerivation {
   ++ extraTools;
   depsTargetTargetPropagated = optional (libcxx != null) libcxx ++ extraPackages;
 
-  setupHooks = [
-    ../setup-hooks/role.bash
-  ]
-  ++ optional (cc.langC or true) ./setup-hook.sh
-  ++ optional (cc.langFortran or false) ./fortran-hook.sh
-  ++ optional (targetPlatform.isWindows || targetPlatform.isCygwin) (
-    stdenvNoCC.mkDerivation {
-      name = "win-dll-hook.sh";
-      dontUnpack = true;
-      strictDeps = true;
-      __structuredAttrs = true;
-      installPhase =
-        if targetPlatform.isCygwin then
-          ''
-            echo addToSearchPath "_linkDeps_inputPath" "${cc_solib}/bin" >> $out
-            # Work around build failure caused by the gnulib workaround for
-            # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=114870. remove after
-            # gnulib is updated in core packages (e.g. iconv, gnupatch, gnugrep)
-            echo appendToVar configureFlags gl_cv_clean_version_stddef=yes >> $out
-          ''
-        else
-          ''
-            echo addToSearchPath "LINK_DLL_FOLDERS" "${cc_solib}/lib" > $out
-            echo addToSearchPath "LINK_DLL_FOLDERS" "${cc_solib}/lib64" >> $out
-            echo addToSearchPath "LINK_DLL_FOLDERS" "${cc_solib}/lib32" >> $out
-          '';
-    }
-  );
+  setupHooks =
+    # Wrappers without a C frontend also register DLL paths as passive inputs.
+    lib.optionals (!hasC) windowsDllHooks
+    ++ [
+      ../wrapper-common/skip-inactive-hook.sh
+      ../setup-hooks/role.bash
+    ]
+    ++ optional hasC ./setup-hook.sh
+    ++ optional (cc.langFortran or false) ./fortran-hook.sh
+    ++ lib.optionals hasC windowsDllHooks;
 
   postFixup =
     # Ensure flags files exists, as some other programs cat them. (That these
@@ -720,7 +731,7 @@ stdenvNoCC.mkDerivation {
             # 'cc.lib'. But it's a gcc package bug.
             # TODO(trofi): remove once gcc is fixed to move libraries to .lib output.
             echo "-L${gccForLibs}/${
-              optionalString (targetPlatform != hostPlatform) "/${targetPlatform.config}"
+              optionalString ((gccForLibs.targetConfig or null) != null) "/${gccForLibs.targetConfig}"
             }/lib" >> $out/nix-support/cc-ldflags
           ''
           # this ensures that when clang passes -lgcc_s to lld (as it does
@@ -858,7 +869,8 @@ stdenvNoCC.mkDerivation {
       echo "''${ccLDFlags[*]}" >> $out/nix-support/cc-ldflags
       echo "''${ccCFlags[*]}" >> $out/nix-support/cc-cflags
     ''
-    + optionalString (targetPlatform.isDarwin && (libcxx != null) && (cc.isClang or false)) ''
+    # Standalone invocations do not get this runtime's library path from stdenv.
+    + optionalString ((libcxx != null) && (cc.isClang or false)) ''
       echo "-L${libcxx_solib}" >> $out/nix-support/cc-ldflags
     ''
 
@@ -985,6 +997,11 @@ stdenvNoCC.mkDerivation {
       substituteAll ${./add-hardening.sh} $out/nix-support/add-hardening.sh
       substituteAll ${../wrapper-common/utils.bash} $out/nix-support/utils.bash
       substituteAll ${../wrapper-common/darwin-sdk-setup.bash} $out/nix-support/darwin-sdk-setup.bash
+      (
+        export wrapperMode=prepared prog=unused
+        substituteAll ${./cc-wrapper.sh} $out/nix-support/compiler
+        chmod +x $out/nix-support/compiler
+      )
     ''
 
     + optionalString cc.langAda or false ''
@@ -1023,8 +1040,19 @@ stdenvNoCC.mkDerivation {
     );
 
   env = {
+    inherit isGNU;
     inherit isClang;
     inherit isFlang;
+    bintools_linkerFlavor =
+      bintools.linkerFlavor or (
+        if bintools.isLLVM or false then
+          "lld"
+        else if bintools.isGNU or false then
+          "bfd"
+        else
+          "unknown"
+      );
+    bintools_raw = if (bintools.bintools or null) == null then "" else getBin bintools.bintools;
 
     # for substitution in utils.bash
     # TODO(@sternenseemann): invent something cleaner than passing in "" in case of absence
@@ -1041,9 +1069,15 @@ stdenvNoCC.mkDerivation {
     cc = optionalString (!nativeTools) cc;
     wrapperName = "CC_WRAPPER";
     inherit suffixSalt coreutils_bin bintools;
-    inherit libc_bin libc_dev libc_lib;
+    inherit
+      libc_bin
+      libc_bin_for_host
+      libc_dev
+      libc_lib
+      ;
+    ${if targetPlatform.isWindows || targetPlatform.isCygwin then "cc_solib" else null} = cc_solib;
     inherit darwinPlatformForCC;
-    default_hardening_flags_str = toString defaultHardeningFlags;
+    default_hardening_flags_str = lib.escapeShellArg (toString defaultHardeningFlags);
     inherit useMacroPrefixMap;
     # These will become empty strings when not targeting Darwin.
     darwinMinVersion = lib.optionalString targetPlatform.isDarwin targetPlatform.darwinMinVersion;
@@ -1059,7 +1093,10 @@ stdenvNoCC.mkDerivation {
     let
       cc_ = optionalAttrs (cc != null) cc;
     in
-    (optionalAttrs (cc_ ? meta) (removeAttrs cc.meta [ "priority" ]))
+    # Without propagateDoc, the wrapper lacks the compiler's documentation outputs.
+    (optionalAttrs (cc_ ? meta) (
+      removeAttrs cc.meta ([ "priority" ] ++ optional (!propagateDoc) "outputsToInstall")
+    ))
     // {
       description = attrByPath [ "meta" "description" ] "System C compiler" cc_ + " (wrapper script)";
       priority = 10;

@@ -3,8 +3,8 @@ getTargetRoleWrapper
 
 export FC${role_post}=@named_fc@
 
-# If unset, assume the default hardening flags.
-: ${NIX_HARDENING_ENABLE="@default_hardening_flags_str@"}
-export NIX_HARDENING_ENABLE
+if [[ -z $role_post ]]; then
+    source @out@/nix-support/set-default-hardening.sh
+fi
 
 unset -v role_post

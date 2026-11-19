@@ -1526,12 +1526,19 @@ Dependency finding is undoubtedly the main task of the CC Wrapper. This works ju
 
 Similarly, the CC Wrapper follows the Bintools Wrapper in defining standard environment variables with the names of the tools it wraps, for the same reasons described above. Importantly, while it includes a `cc` symlink to the c compiler for portability, the `CC` will be defined using the compiler’s “real name” (i.e. `gcc` or `clang`). This helps lousy build systems that inspect on the name of the compiler rather than run it.
 
+The HOST-role wrapper supplies the default for `NIX_HARDENING_ENABLE` when
+the build has left it unset. For a compiler serving only BUILD or TARGET,
+use `NIX_HARDENING_ENABLE_FOR_BUILD` or `NIX_HARDENING_ENABLE_FOR_TARGET`
+to set that role’s hardening policy.
+
 Here are some more packages that provide a setup hook. Since the list of hooks is extensible, this is not an exhaustive list. The mechanism is only to be used as a last resort, so it might cover most uses.
 
 ### Other hooks {#stdenv-other-hooks}
 
 Many other packages provide hooks, that are not part of `stdenv`. You can find
 these in the [Hooks Reference](#chap-hooks).
+
+A fresh compiler selects flags for its active BUILD, HOST and TARGET roles in that order. Its linker inherits the selected linker policy and the record of which flags have already been passed to the driver. A launcher invoking a separate public linker must clear `NIX_WRAPPER_OPERATION` for that independent command. [Wrapper design](../../pkgs/build-support/wrapper-common/README.md)
 
 ### Compiler and Linker wrapper hooks {#compiler-linker-wrapper-hooks}
 

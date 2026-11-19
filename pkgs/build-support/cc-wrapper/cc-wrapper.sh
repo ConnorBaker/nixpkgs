@@ -16,10 +16,26 @@ if [[ -n "@coreutils_bin@" && -n "@gnugrep_bin@" ]]; then
 fi
 
 source @out@/nix-support/utils.bash
+wrapperLinkerFlavor=@bintools_linkerFlavor@
 
-source @out@/nix-support/darwin-sdk-setup.bash
+# A prepared response file can contain the executable as its first argument.
+if [[ @wrapperMode@ == prepared && ${1:-} == @* ]]; then
+    expandResponseParams "$@"
+else
+    params=("$@")
+fi
+if [[ @wrapperMode@ == prepared ]]; then
+    wrapperImport toolchain
+    wrapperCompiler=${params[0]:?missing compiler executable}
+    params=("${params[@]:1}")
+    set -- "${params[@]}"
+else
+    wrapperClear
+    wrapperCompiler=@prog@
+    source @out@/nix-support/darwin-sdk-setup.bash
+fi
 
-
+expandResponseParams "${params[@]}"
 # Parse command line options and set several variables.
 # For instance, figure out if linker flags should be passed.
 # GCC prints annoying warnings when they are not needed.
@@ -27,12 +43,10 @@ dontLink=0
 nonFlagArgs=0
 cc1=0
 # shellcheck disable=SC2193
-[[ "@prog@" = *++ ]] && isCxx=1 || isCxx=0
+[[ "$wrapperCompiler" = *++ ]] && isCxx=1 || isCxx=0
 cxxInclude=1
 cxxLibrary=1
 cInclude=1
-
-expandResponseParams "$@"
 
 declare -ag positionalArgs=()
 declare -i n=0
@@ -49,11 +63,9 @@ while (( "$n" < "$nParams" )); do
         -nostdinc++) cxxInclude=0 ;;
         -nostdlib) cxxLibrary=0 ;;
         -x*-header) dontLink=1 ;; # both `-x c-header` and `-xc-header` are accepted by clang
-        -xc++*) isCxx=1 ;;        # both `-xc++` and `-x c++` are accepted by clang
         -x)
             case "$p2" in
                 *-header) dontLink=1 ;;
-                c++*) isCxx=1 ;;
             esac
             ;;
         --) # Everything else is positional args!
@@ -85,6 +97,11 @@ fi
 if [ "@isArocc@" = 1 ]; then
     dontLink=1
 fi
+if [[ @wrapperMode@ != prepared ]]; then
+    # Put compiler preparation second so libc ldflags retain their ordering.
+    source @bintools@/nix-support/add-flags.sh
+    source @out@/nix-support/add-flags.sh
+fi
 
 # Optionally filter out paths not refering to the store.
 if [[ "${NIX_ENFORCE_PURITY:-}" = 1 && -n "$NIX_STORE" ]]; then
@@ -115,18 +132,9 @@ if [[ "${NIX_ENFORCE_PURITY:-}" = 1 && -n "$NIX_STORE" ]]; then
     params=(${kept+"${kept[@]}"})
 fi
 
-# Flirting with a layer violation here.
-if [ -z "${NIX_BINTOOLS_WRAPPER_FLAGS_SET_@suffixSalt@:-}" ]; then
-    source @bintools@/nix-support/add-flags.sh
-fi
-
-# Put this one second so libc ldflags take priority.
-if [ -z "${NIX_CC_WRAPPER_FLAGS_SET_@suffixSalt@:-}" ]; then
-    source @out@/nix-support/add-flags.sh
-fi
 
 # Clear march/mtune=native -- they bring impurity.
-if [ "$NIX_ENFORCE_NO_NATIVE_@suffixSalt@" = 1 ]; then
+if [[ "$wrapper_NIX_ENFORCE_NO_NATIVE" = 1 ]]; then
     kept=()
     # Old bash empty array hack
     for p in ${params+"${params[@]}"}; do
@@ -140,48 +148,25 @@ if [ "$NIX_ENFORCE_NO_NATIVE_@suffixSalt@" = 1 ]; then
     params=(${kept+"${kept[@]}"})
 fi
 
-# Some build systems such as Bazel and SwiftPM use `clang` instead of `clang++`,
-# which will find the libc++ headers in the sysroot for C++ files.
-if [[ "$isCxx" = 0 && "@isClang@" ]]; then
-# This duplicates the behavior of a native toolchain, which can find the
-# libc++ headers but requires `-lc++` to be specified explicitly when linking.
-    isCxx=1
-    cxxLibrary=0
+# Clang selects its driver mode from the combined command line.
+if [[ "@isClang@" == 1 && "@isFlang@" != 1 ]]; then
+    primaryDriverArgs=($wrapper_NIX_CFLAGS_COMPILE_BEFORE "${params[@]}" $wrapper_NIX_CFLAGS_COMPILE)
+    if [[ $dontLink != 1 ]]; then
+        primaryDriverArgs+=($wrapper_NIX_CFLAGS_LINK)
+    fi
+    # Clang selects its mode before option parsing, even in operands and after --.
+    primaryDriverArgs+=("${positionalArgs[@]}")
+    for p in "${primaryDriverArgs[@]}"; do
+        case "$p" in
+            --driver-mode=g++) isCxx=1 ;;
+            --driver-mode=*) isCxx=0 ;;
+        esac
+    done
 fi
 
-if [[ "$isCxx" = 1 ]]; then
-    if [[ "$cxxInclude" = 1 ]]; then
-        #
-        # The motivation for this comment is to explain the reason for appending
-        # the C++ stdlib to NIX_CFLAGS_COMPILE, which I initially thought should
-        # change and later realized it shouldn't in:
-        #
-        #   https://github.com/NixOS/nixpkgs/pull/185569#issuecomment-1234959249
-        #
-        # NIX_CFLAGS_COMPILE contains dependencies added using "-isystem", and
-        # NIX_CXXSTDLIB_COMPILE adds the C++ stdlib using "-isystem". Appending
-        # NIX_CXXSTDLIB_COMPILE to NIX_CLAGS_COMPILE emulates this part of the
-        # include lookup order from GCC/Clang:
-        #
-        # > 4. Directories specified with -isystem options are scanned in
-        # >    left-to-right order.
-        # > 5. Standard system directories are scanned.
-        # > 6. Directories specified with -idirafter options are scanned
-        # >    in left-to-right order.
-        #
-        # NIX_CXX_STDLIB_COMPILE acts as the "standard system directories" that
-        # are otherwise missing from CC in nixpkgs, so should be added last.
-        #
-        # This means that the C standard library should never be present inside
-        # NIX_CFLAGS_COMPILE, because it MUST come after the C++ stdlib. It is
-        # added automatically by cc-wrapper later using "-idirafter".
-        #
-        NIX_CFLAGS_COMPILE_@suffixSalt@+=" $NIX_CXXSTDLIB_COMPILE_@suffixSalt@"
-    fi
-    if [[ "$cxxLibrary" = 1 ]]; then
-        NIX_CFLAGS_LINK_@suffixSalt@+=" $NIX_CXXSTDLIB_LINK_@suffixSalt@"
-    fi
-fi
+# -x belongs to native per-input language selection. Clang's C driver still
+# needs packaged C++ header defaults without opaque caller C++ arguments.
+wrapperCompileFlags "@isClang@"
 
 source @out@/nix-support/add-hardening.sh
 
@@ -192,36 +177,32 @@ source @out@/nix-support/add-hardening.sh
 # Fortran driver. This mirrors the NIX_GNATFLAGS_COMPILE channel that
 # the Ada/GNAT wrapper uses for the same reason.
 if [ "@isFlang@" = 1 ]; then
-    extraAfter=(${hardeningCFlagsAfter[@]+"${hardeningCFlagsAfter[@]}"} $NIX_FFLAGS_COMPILE_@suffixSalt@)
-    extraBefore=(${hardeningCFlagsBefore[@]+"${hardeningCFlagsBefore[@]}"} $NIX_FFLAGS_COMPILE_BEFORE_@suffixSalt@)
+    extraAfter=(${hardeningCFlagsAfter[@]+"${hardeningCFlagsAfter[@]}"} $wrapper_NIX_FFLAGS_COMPILE)
+    extraBefore=(${hardeningCFlagsBefore[@]+"${hardeningCFlagsBefore[@]}"} $wrapper_NIX_FFLAGS_COMPILE_BEFORE)
 else
-    extraAfter=(${hardeningCFlagsAfter[@]+"${hardeningCFlagsAfter[@]}"} $NIX_CFLAGS_COMPILE_@suffixSalt@)
-    extraBefore=(${hardeningCFlagsBefore[@]+"${hardeningCFlagsBefore[@]}"} $NIX_CFLAGS_COMPILE_BEFORE_@suffixSalt@)
+    extraAfter=(${hardeningCFlagsAfter[@]+"${hardeningCFlagsAfter[@]}"} $wrapperCFlags)
+    extraBefore=(${hardeningCFlagsBefore[@]+"${hardeningCFlagsBefore[@]}"} $wrapper_NIX_CFLAGS_COMPILE_BEFORE)
 fi
 
+# Record rendering here, before hooks can change scratch variables or the job.
+wrapper_NIX_LINK_TYPE=
 if [ "$dontLink" != 1 ]; then
-    linkType=$(checkLinkType $NIX_LDFLAGS_BEFORE_@suffixSalt@ "${params[@]}" ${NIX_CFLAGS_LINK_@suffixSalt@:-} $NIX_LDFLAGS_@suffixSalt@)
+    linkType=$(checkLinkType $wrapper_NIX_LDFLAGS_BEFORE "${params[@]}" ${wrapperCFlagsLink:-} $wrapper_NIX_LDFLAGS)
 
     # Add the flags that should only be passed to the compiler when
     # linking.
-    extraAfter+=($(filterRpathFlags "$linkType" $NIX_CFLAGS_LINK_@suffixSalt@))
+    extraAfter+=($(filterCompilerRpathFlags "$linkType" $wrapperCFlagsLink))
 
     # Add the flags that should be passed to the linker (and prevent
-    # `ld-wrapper' from adding NIX_LDFLAGS_@suffixSalt@ again).
-    for i in $(filterRpathFlags "$linkType" $NIX_LDFLAGS_BEFORE_@suffixSalt@); do
-        extraBefore+=("-Wl,$i")
-    done
-    if [[ "$linkType" == dynamic && -n "$NIX_DYNAMIC_LINKER_@suffixSalt@" ]]; then
-        extraBefore+=("-Wl,-dynamic-linker=$NIX_DYNAMIC_LINKER_@suffixSalt@")
+    # `ld-wrapper' from adding wrapper_NIX_LDFLAGS again).
+    wrapperCompilerLinkerFlags "$wrapperLinkerFlavor" before $(filterRpathFlags "$linkType" $wrapper_NIX_LDFLAGS_BEFORE)
+    extraBefore+=("${wrapperLinkerFlags[@]}")
+    if [[ "$linkType" == dynamic && -n "$wrapper_NIX_DYNAMIC_LINKER" ]]; then
+        extraBefore+=(-Xlinker "-dynamic-linker=$wrapper_NIX_DYNAMIC_LINKER")
     fi
-    for i in $(filterRpathFlags "$linkType" $NIX_LDFLAGS_@suffixSalt@); do
-        if [ "${i:0:3}" = -L/ ]; then
-            extraAfter+=("$i")
-        else
-            extraAfter+=("-Wl,$i")
-        fi
-    done
-    export NIX_LINK_TYPE_@suffixSalt@=$linkType
+    wrapperCompilerLinkerFlags "$wrapperLinkerFlavor" main $(filterRpathFlags "$linkType" $wrapper_NIX_LDFLAGS)
+    extraAfter+=("${wrapperLinkerFlags[@]}")
+    wrapper_NIX_LINK_TYPE=$linkType
 fi
 
 if [[ -e @out@/nix-support/add-local-cc-cflags-before.sh ]]; then
@@ -253,34 +234,41 @@ fi
 
 # if a cc-wrapper-hook exists, run it.
 if [[ -e @out@/nix-support/cc-wrapper-hook ]]; then
-    compiler=@prog@
+    compiler=$wrapperCompiler
     source @out@/nix-support/cc-wrapper-hook
 fi
 
 # Optionally print debug info.
 if (( "${NIX_DEBUG:-0}" >= 1 )); then
     # Old bash workaround, see ld-wrapper for explanation.
-    echo "extra flags before to @prog@:" >&2
+    echo "extra flags before to $wrapperCompiler:" >&2
     printf "  %q\n" ${extraBefore+"${extraBefore[@]}"}  >&2
-    echo "original flags to @prog@:" >&2
+    echo "original flags to $wrapperCompiler:" >&2
     printf "  %q\n" ${params+"${params[@]}"} >&2
-    echo "extra flags after to @prog@:" >&2
+    echo "extra flags after to $wrapperCompiler:" >&2
     printf "  %q\n" ${extraAfter+"${extraAfter[@]}"} >&2
 fi
 
 export PATH="$path_backup"
+wrapperOperation=
+# Conditional policy or a hook may introduce a linker after primary selection.
+# The continuation carries selected inputs and records whether they were rendered.
+if [[ $cc1 != 1 ]]; then wrapperOperation=link; fi
 # Old bash workaround, see above.
 
-if (( "${NIX_CC_USE_RESPONSE_FILE:-@use_response_file_by_default@}" >= 1 )); then
+if (( "${NIX_CC_USE_RESPONSE_FILE:-@use_response_file_by_default@}" >= 1 )) && canWriteResponseFile \
+   ${extraBefore+"${extraBefore[@]}"} \
+   ${params+"${params[@]}"} \
+   ${extraAfter+"${extraAfter[@]}"}; then
     responseFile=$(@mktemp@ "${TMPDIR:-/tmp}/cc-params.XXXXXX")
     trap '@rm@ -f -- "$responseFile"' EXIT
-    printf "%q\n" \
+    writeResponseFile \
        ${extraBefore+"${extraBefore[@]}"} \
        ${params+"${params[@]}"} \
        ${extraAfter+"${extraAfter[@]}"} > "$responseFile"
-    @prog@ "@$responseFile"
+    (wrapperRun "$wrapperOperation" "$wrapperCompiler" "@$responseFile")
 else
-    exec @prog@ \
+    wrapperRun "$wrapperOperation" "$wrapperCompiler" \
        ${extraBefore+"${extraBefore[@]}"} \
        ${params+"${params[@]}"} \
        ${extraAfter+"${extraAfter[@]}"}
