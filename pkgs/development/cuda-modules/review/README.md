@@ -64,7 +64,11 @@ explicit `CC` and `CXX` still select caller compilers.
 Build `-A torch.tests.tester-cppExtension`, then run
 `bin/tester-torch-cpp-extension` on HOST outside stdenv.
 `TORCH_CUDA_ARCH_LIST=12.1a` selects Spark. Run Torch's
-[cpu-dot.py](../../python-modules/torch/tests/cpu-dot.py) in the installed Python environment.
+[cpu-dot.py](../../python-modules/torch/tests/cpu-dot.py) and
+[csr-reductions.py](../../python-modules/torch/tests/csr-reductions.py) in the
+installed Python environment. See [MAGMA's instructions](../../../by-name/ma/magma/tests/README.md)
+for `runtime.py --suite dense|sparse` and [PyCUDA's instructions](../../python-modules/pycuda/README.md)
+for managed-memory GPU checks.
 
 External driver adapters should expose matching OS NVIDIA libraries, including
 NVML where required, rather than an entire foreign distribution's library
