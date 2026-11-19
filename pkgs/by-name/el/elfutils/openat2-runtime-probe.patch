@@ -1,0 +1,42 @@
+--- a/tests/run-sysroot.sh
++++ b/tests/run-sysroot.sh
+@@ -47,10 +47,37 @@
+ EOF
+ 
+ libc_has_openat2_resolve_in_root() {
+-  grep '^#define HAVE_OPENAT2_RESOLVE_IN_ROOT' ${abs_builddir}/../config.h | awk '{print $3}'
++  grep -q '^#define HAVE_OPENAT2_RESOLVE_IN_ROOT 1$' "${abs_builddir}/../config.h"
+ }
+ kernel_has_openat2_resolve_in_root() {
+-  printf "%s\n%s" "5.6.0" "$(uname -r)" | sort -V -C
++  # The build headers and running kernel version cannot tell us if the
++  # syscall is available in this environment. libdwfl falls back on ENOSYS.
++  $CC -x c -o "${tmpdir}/openat2-probe" - <<'EOF' || exit 1
++#define _GNU_SOURCE
++#include <errno.h>
++#include <fcntl.h>
++#include <linux/openat2.h>
++#include <stdio.h>
++#include <sys/syscall.h>
++#include <unistd.h>
++int main (void)
++{
++  struct open_how how = { .flags = O_RDONLY | O_DIRECTORY, .resolve = RESOLVE_IN_ROOT };
++  if (syscall (SYS_openat2, AT_FDCWD, ".", &how, sizeof how) >= 0)
++    return 0;
++  if (errno == ENOSYS)
++    return 77;
++  perror ("openat2 (RESOLVE_IN_ROOT)");
++  return 1;
++}
++EOF
++  result=0
++  testrun "${tmpdir}/openat2-probe" || result=$?
++  case $result in
++    0) return 0 ;;
++    77) return 1 ;;
++    *) exit "$result" ;;
++  esac
+ }
+ 
+ if libc_has_openat2_resolve_in_root && kernel_has_openat2_resolve_in_root; then
