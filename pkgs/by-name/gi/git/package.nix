@@ -586,6 +586,16 @@ stdenv.mkDerivation (finalAttrs: {
     # Fails reproducibly on ZFS on Linux with formD normalization
     disable_test t0021-conversion
     disable_test t3910-mac-os-precompose
+    if [[ $(stat -f -c %T .) == zfs ]]; then
+      # ZFS preserves spelling on disk even when two Unicode forms alias.
+      substituteInPlace t/t0050-filesystem.sh \
+        --replace-fail "\$test_unicode 'rename (silent unicode normalization)'" \
+          "test_expect_success 'rename (silent unicode normalization)'"
+      # Linux fsmonitor can miss edits through the alternate spelling.
+      substituteInPlace t/t7527-builtin-fsmonitor.sh \
+        --replace-fail "test_expect_success !UNICODE_COMPOSITION_SENSITIVE 'Unicode nfc/nfd'" \
+          "test_expect_failure !UNICODE_COMPOSITION_SENSITIVE 'Unicode nfc/nfd'"
+    fi
   ''
   + lib.optionalString stdenv.hostPlatform.isDarwin ''
     # XXX: Some tests added in 2.24.0 fail.
