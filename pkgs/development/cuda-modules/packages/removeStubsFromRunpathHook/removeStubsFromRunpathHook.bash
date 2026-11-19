@@ -40,7 +40,7 @@ removeStubsFromRunpath() {
   local -a origRunpathEntries=()
   local -a newRunpathEntries=()
   local -r driverLinkLib="@driverLinkLib@"
-  local -i driverLinkLibSightings=0
+  local sawStub=0 addedDriver=0
 
   if [[ $# -eq 0 ]]; then
     nixErrorLog "no library path provided" >&2
@@ -57,30 +57,21 @@ removeStubsFromRunpath() {
 
   getRunpathEntries "$libPath" origRunpathEntries
 
-  # NOTE: Always pre-increment since (( 0 )) sets an exit code of 1.
   for runpathEntry in "${origRunpathEntries[@]}"; do
     case $runpathEntry in
-    # NOTE: This assumes stubs have "-cuda" (`cudaNamePrefix` in `buildRedist`) in name.
-    # Match on (sub)directories named stubs or lib inside a stubs output.
+    # Keep the earliest driver or stub position and all other entries in order.
     *-cuda*/stubs|*-cuda*-stubs/lib*)
-      if ((driverLinkLibSightings)); then
-        # No need to add another copy of the driverLinkLib; just drop the stubs entry.
-        nixDebugLog "dropping $libPath runpath entry: $runpathEntry"
-      else
-        # We haven't observed a driverLinkLib yet, so replace the stubs entry with one.
-        nixDebugLog "replacing $libPath runpath entry: $runpathEntry -> $driverLinkLib"
-        newRunpathEntries+=("$driverLinkLib")
-        ((++driverLinkLibSightings))
-      fi
-      ;;
-
-    *)
-      nixDebugLog "keeping $libPath runpath entry: $runpathEntry"
-      newRunpathEntries+=("$runpathEntry")
-      [[ $runpathEntry == "$driverLinkLib" ]] && ((++driverLinkLibSightings))
+      sawStub=1
+      runpathEntry=$driverLinkLib
       ;;
     esac
+    if [[ $runpathEntry == "$driverLinkLib" ]]; then
+      ((addedDriver)) && continue
+      addedDriver=1
+    fi
+    newRunpathEntries+=("$runpathEntry")
   done
+  ((sawStub)) || return 0
 
   local -r newRunpath=$(concatStringsSep ":" newRunpathEntries)
   patchelf --set-rpath "$newRunpath" "$libPath"

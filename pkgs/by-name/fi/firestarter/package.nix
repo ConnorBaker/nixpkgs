@@ -121,7 +121,7 @@ stdenv.mkDerivation (finalAttrs: {
   );
 
   env = lib.optionalAttrs withCuda {
-    NIX_LDFLAGS = "-L${lib.getOutput "stubs" cudaPackages.cuda_cudart}/lib/stubs";
+    NIX_LDFLAGS = "-L${lib.getOutput cudaPackages.cuda_cudart.outputStubs cudaPackages.cuda_cudart}/lib/stubs";
   };
 
   cmakeFlags = [
