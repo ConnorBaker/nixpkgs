@@ -50,11 +50,12 @@ esac
 source @out@/nix-support/add-hardening.sh
 
 # Reuse the compiler's rendering decision for its link continuation. A fresh
-# invocation uses the same literal mode selection as the compiler wrapper.
+# invocation inspects raw linker arguments using this linker's operand rules.
 if [[ $mainPolicyHandled == 1 ]]; then
     linkType=$wrapper_NIX_LINK_TYPE
 else
-    linkType=$(checkLinkType "${params[@]}")
+    linkType=dynamic
+    selectLinkType linker "${params[@]}"
 fi
 
 if [[ "${NIX_ENFORCE_PURITY:-}" = 1 && -n "${NIX_STORE:-}"

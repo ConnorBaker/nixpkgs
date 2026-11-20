@@ -187,7 +187,10 @@ fi
 # Record rendering here, before hooks can change scratch variables or the job.
 wrapper_NIX_LINK_TYPE=
 if [ "$dontLink" != 1 ]; then
-    linkType=$(checkLinkType $wrapper_NIX_LDFLAGS_BEFORE "${params[@]}" ${wrapperCFlagsLink:-} $wrapper_NIX_LDFLAGS)
+    linkType=dynamic
+    selectLinkType linker $wrapper_NIX_LDFLAGS_BEFORE
+    selectLinkType driver "${params[@]}" ${wrapperCFlagsLink:-}
+    selectLinkType linker $wrapper_NIX_LDFLAGS
 
     # Add the flags that should only be passed to the compiler when
     # linking.

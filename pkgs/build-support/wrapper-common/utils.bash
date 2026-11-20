@@ -429,17 +429,21 @@ linkerOptionTakesOperand() {
     esac
 }
 
-checkLinkType() {
-    local arg
-    type="dynamic"
-    for arg in "$@"; do
-        if [[ "$arg" = -static ]]; then
-            type="static"
-        elif [[ "$arg" = -static-pie ]]; then
-            type="static-pie"
-        fi
+# Update linkType in invocation order. Only raw linker inputs use linker operand rules.
+selectLinkType() {
+    local channel=$1 arg
+    shift
+    while (( $# )); do
+        arg=$1; shift
+        case "$arg" in
+            -static|-static-pie) linkType=${arg#-} ;;
+            --) break ;;
+            -*)
+                if [[ $channel == linker && $# -gt 0 ]] && linkerOptionTakesOperand "$arg"; then
+                    shift
+                fi ;;
+        esac
     done
-    echo "$type"
 }
 
 # When building static-pie executables we cannot have rpath

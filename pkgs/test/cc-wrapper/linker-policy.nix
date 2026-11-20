@@ -70,6 +70,11 @@ lib.optionalString (stdenv.hostPlatform.isLinux && !stdenv.hostPlatform.isStatic
     grep -F -- '-L/rpath-policy' linker-policy.dynamic
   done
 
+  NIX_LDFLAGS='--soname -static-pie -rpath /nix/store/retained-policy' \
+    ${CC} -shared linker-policy.o -o linker-policy-dynamic.so
+  "$READELF" -d linker-policy-dynamic.so > linker-policy.dynamic
+  grep -F '/nix/store/retained-policy' linker-policy.dynamic
+
   ${lib.optionalString stdenv.cc.isGNU ''
     # Compiler-visible -L must precede search paths introduced by -B.
     mkdir -p linker-policy-search/{prefix,selected}
@@ -210,7 +215,7 @@ lib.optionalString (stdenv.hostPlatform.isLinux && !stdenv.hostPlatform.isStatic
     rpaths=('-rpath /nix/store/unused-policy' '--rpath /nix/store/unused-policy' \
         '-rpath=/nix/store/unused-policy' '--rpath=/nix/store/unused-policy')
     for rpath in "''${rpaths[@]}"; do
-      NIX_LDFLAGS="$rpath" ${CC} ${staticLibc} -static-pie ${./cc-main.c} -o linker-policy-pie
+      NIX_CFLAGS_LINK=-static-pie NIX_LDFLAGS="$rpath --soname -static" ${CC} ${staticLibc} ${./cc-main.c} -o linker-policy-pie
       "$READELF" -ld linker-policy-pie > linker-policy.headers
       if grep -E 'RPATH|RUNPATH|INTERP' linker-policy.headers; then exit 1; fi
       ${emulator} ./linker-policy-pie
