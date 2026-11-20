@@ -41,11 +41,13 @@ The `cudaSupport` configuration option is used by packages to conditionally enab
 
 The `cudaCapabilities` configuration option specifies a list of CUDA capabilities. Packages may use this option to control device code generation to take advantage of architecture-specific functionality, speed up compile times by producing less device code, or slim package closures. For example, you can build for Ada Lovelace GPUs with `cudaCapabilities = [ "8.9" ];`. If `cudaCapabilities` is not provided, the default value is calculated per-package set, derived from a list of GPUs supported by that CUDA version. Please consult [supported GPUs](https://en.wikipedia.org/wiki/CUDA#GPUs_supported) for specific cards. Library maintainers should consult [NVCC Docs](https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/) and its release notes.
 
+NCCL uses a separate target for some FP8 multicast kernels. On CUDA 12.9 and later it follows the configured capabilities when forward compatibility is disabled and every target either predates SM 100 or implements these kernels. Other configurations retain NCCL’s specialized target.
+
 ::: {.caution}
 Certain CUDA capabilities are not targeted by default, including capabilities belonging to the Jetson family of devices (e.g. `8.7`, which corresponds to the Jetson Orin) or non-baseline feature-sets (e.g. `9.0a`, which corresponds to the Hopper exclusive feature set). If you need to target these capabilities, you must explicitly set `cudaCapabilities` to include them.
 :::
 
-The `cudaForwardCompat` boolean configuration option determines whether PTX support for future hardware is enabled.
+Enabling `cudaForwardCompat` adds PTX for the last configured capability to the CUDA package set’s NVCC flags. Packages such as NVSHMEM pass unsuffixed architecture names to CMake, which generates machine code and PTX for each selected capability even when this option is disabled. See [CMake’s CUDA architecture property](https://cmake.org/cmake/help/latest/prop_tgt/CUDA_ARCHITECTURES.html).
 
 ### Modifying CUDA package sets {#cuda-modifying-cuda-package-sets}
 

@@ -5,6 +5,7 @@
   cudaConfig,
   cccl,
   cuda_cudart,
+  cuda_cuobjdump,
   cuda_nvcc,
   cudaAtLeast,
   cudaMajorMinorVersion,
@@ -16,6 +17,7 @@
   patchelf,
   python3,
   rdma-core,
+  runCommand,
   which,
   # passthru.updateScript
   gitUpdater,
@@ -26,6 +28,26 @@
 let
   # Compiler paths embedded in strings bypass nativeBuildInputs splicing.
   buildNvcc = cuda_nvcc.__spliced.buildHost or cuda_nvcc;
+  # NCCL otherwise selects SM 100f for FP8 multicast loads. Below SM 100
+  # its dispatcher excludes these kernels. The feature targets here implement
+  # the generated reduction in src/device/reduce_kernel.h. Generic Blackwell
+  # code and forward PTX can expose an entry point with an empty body.
+  useConfiguredFp8Targets =
+    cudaAtLeast "12.9"
+    && !flags.cudaForwardCompat
+    && lib.all (
+      cap:
+      lib.versionOlder cap "10.0"
+      || lib.elem cap [
+        "10.0a"
+        "10.0f"
+        "10.1a"
+        "10.1f"
+        "10.7a"
+        "12.0a"
+        "12.1a"
+      ]
+    ) flags.cudaCapabilities;
   inherit (_cuda.lib) _getJetsonMinSbsaCapability _mkMetaBadPlatforms;
   inherit (cudaConfig) hasJetsonCudaCapability requestedJetsonCudaCapabilities;
   sbsaJetsonCapability = _getJetsonMinSbsaCapability cudaMajorMinorVersion;
@@ -150,7 +172,8 @@ backendStdenv.mkDerivation (finalAttrs: {
     "CUDA_LIB=${getLib cuda_cudart}/lib"
     "NVCC_GENCODE=${flags.gencodeString}"
     "PREFIX=$(out)"
-  ];
+  ]
+  ++ optional useConfiguredFp8Targets "NVCC_GENCODE_LDMC_FP8=${flags.gencodeString}";
 
   enableParallelBuilding = true;
 
@@ -172,6 +195,23 @@ backendStdenv.mkDerivation (finalAttrs: {
   disallowedRequisites = [ (lib.getBin buildNvcc) ];
 
   passthru = {
+    tests = lib.optionalAttrs useConfiguredFp8Targets {
+      fp8Targets =
+        runCommand "${finalAttrs.name}-fp8-targets"
+          {
+            nativeBuildInputs = [ cuda_cuobjdump ];
+            AR = "${backendStdenv.cc.bintools}/bin/${backendStdenv.cc.targetPrefix}ar";
+          }
+          ''
+            printf '%s\n' ${lib.escapeShellArgs flags.realArches} | sort -u > expected
+            for suffix in "" _profile; do
+              "$AR" p ${finalAttrs.finalPackage.static}/lib/libnccl_static.a "reduce_scatter_sum_f8e4m3_LDMC$suffix.cu.o" > kernel.o
+              cuobjdump --dump-elf-symbols kernel.o | sed -n 's/^arch = //p' | sort -u > actual
+              diff -u expected actual
+            done
+            touch "$out"
+          '';
+    };
     platformAssertions = [
       {
         message = "Pre-SBSA Jetson devices (CUDA capabilities < ${sbsaJetsonCapability}) are not supported by NCCL";
