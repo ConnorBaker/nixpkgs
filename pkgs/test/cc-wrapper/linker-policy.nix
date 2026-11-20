@@ -29,6 +29,10 @@ lib.optionalString (stdenv.hostPlatform.isLinux && !stdenv.hostPlatform.isStatic
   (
     source ${../../build-support/wrapper-common/utils.bash}
     wrapperLinkerFlavor=bfd
+    wrapperCompilerLinkerFlags lld main --sona -L/policy
+    [[ ''${wrapperLinkerFlags[*]} == '-Wl,--sona -Wl,-L/policy' ]]
+    wrapperCompilerLinkerFlags bfd main --reproduce -L/archive
+    [[ ''${wrapperLinkerFlags[*]} == '-Wl,--reproduce -Wl,-L/archive' ]]
     [[ $(filterRpathFlags dynamic -n -L/kept) == '-n -L/kept' ]]
     [[ $(IFS=: filterRpathFlags dynamic -e policy_entry) == '-e policy_entry' ]]
     [[ $(IFS=: filterCompilerRpathFlags dynamic -e policy_entry) == '-e policy_entry' ]]

@@ -381,6 +381,8 @@ resolveLibDir() {
 linkerOptionTakesOperand() {
     local flavor=${wrapperLinkerFlavor:-@bintools_linkerFlavor@}
     case "$1" in
+        -son|-sona|-sonam)
+            [[ $flavor == bfd ]]; return ;;
         --section-ordering-file|-section-ordering-file)
             [[ $flavor != lld ]]; return ;;
         --section-o*|-section-o*)
@@ -414,7 +416,7 @@ linkerOptionTakesOperand() {
         |--hash-style|-hash-style|--dependency-file|-dependency-file \
         |-a|-A|--architecture|-b|-c|--mri-script|--gpsize|-gpsize \
         |-Y|-P|-assert|-init|--init|-fini|--fini|-dT|--default-script \
-        |--out-implib|--remap-inputs-file|--remap-inputs \
+        |--son|--sona|--sonam|--reproduce|--out-implib|--remap-inputs-file|--remap-inputs \
         |--require-defined|--error-handling-script \
         |--sort-section|-sort-section|--spare-dynamic-tags|-spare-dynamic-tags|--task-link|-task-link \
         |-Tbss|-Tdata|-Ttext|-Ttext-segment \
