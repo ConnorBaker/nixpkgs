@@ -1,8 +1,8 @@
 {
   buildRedist,
+  callPackage,
   cuda_nvcc,
   lib,
-  makeBinaryWrapper,
 }:
 buildRedist (finalAttrs: {
   redistName = "cuda";
@@ -12,10 +12,6 @@ buildRedist (finalAttrs: {
     "out"
   ];
 
-  nativeBuildInputs = [
-    makeBinaryWrapper
-  ];
-
   # tileiras expects to live in a CUDA Toolkit: it dlopens `$ROOT/nvvm/lib64/libnvvm.so` and runs `$ROOT/bin/ptxas`
   # (falling back to PATH), where `$ROOT` is the first of CUDA_ROOT, CUDA_HOME, and CUDA_PATH which is set, or else the
   # parent of the directory containing tileiras. cuda_nvcc provides both in that layout. We use a wrapper instead of
@@ -23,10 +19,16 @@ buildRedist (finalAttrs: {
   # collide with cuda_nvcc's in merged trees like cudatoolkit.
   postInstall = lib.optionalString finalAttrs.finalPackage.meta.available ''
     nixLog "wrapping tileiras to default CUDA_ROOT to ${lib.getBin cuda_nvcc}"
-    wrapProgramBinary \
-      "''${!outputBin:?}/bin/tileiras" \
-      --set-default CUDA_ROOT "${lib.getBin cuda_nvcc}"
+    mv --verbose "''${!outputBin:?}/bin/tileiras" "''${!outputBin:?}/bin/.tileiras-wrapped"
+    install --mode=0755 "${finalAttrs.passthru.tileirasWrapper}/bin/tileiras-wrapper" "''${!outputBin:?}/bin/tileiras"
   '';
+
+  passthru.tileirasWrapper = callPackage ../../wrapper/mk-tool-wrapper.nix { } {
+    name = "tileiras-wrapper";
+    source = ./tileiras-wrapper.cpp;
+    description = "Wrapper for CUDA toolkit discovery in tileiras";
+    flags = [ ''-DTILEIRAS_CUDA_ROOT="${lib.getBin cuda_nvcc}"'' ];
+  };
 
   meta = {
     description = "CUDA Tile IR optimizing assembler";
