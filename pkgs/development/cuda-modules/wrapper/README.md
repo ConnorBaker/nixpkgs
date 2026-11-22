@@ -34,10 +34,10 @@ Nixpkgs' static toolchain links the library and musl into each adapter. The vend
 3. Build the adapter with [`mk-tool-wrapper.nix`](./mk-tool-wrapper.nix), passing its derivation name, source under
    `cuda-modules`, description, and any required compiler flags. See
    [`nvcc-wrapper.nix`](../packages/cuda_nvcc/nvcc-wrapper.nix).
-4. In the package's install phase, move the original executable to `.<tool>-wrapped` in the same directory and
-   copy the adapter to the original path. `cudaWrapper::Tool("<tool>")` locates the vendor executable next to the
-   installed adapter, including when the adapter is reached through a symlink. Use the path the calling program
-   actually resolves. For example, `nvcc` looks up `nvlink` next to itself. See
+4. Call [`install-tool-wrappers.nix`](./install-tool-wrappers.nix) in the package's install phase with a map
+   from each executable name to its adapter derivation. The helper moves each vendor executable to
+   `.<tool>-wrapped` and copies the adapter to its public path. Choose the directory the caller uses.
+   For example, `nvcc` looks up `nvlink` next to itself. See
    [the installation in `cuda_nvcc/package.nix`](../packages/cuda_nvcc/package.nix).
 5. Test the installed entry point with the real vendor executable and inspect the resulting metadata or compare
    repeated outputs. Test that explicit caller options and the vendor tool's failure status are preserved. See
@@ -52,7 +52,8 @@ Nixpkgs' static toolchain links the library and musl into each adapter. The vend
 - [`process.hpp`](./include/process.hpp) provides `Tool::exec` when the adapter can hand off to the vendor executable and
   `Tool::run` when it needs to wait, clean up, or edit the result. `run` forwards signals and returns a wait status.
   Call `exitStatus` after cleanup to propagate the exit code or termination signal. `Tool::editOutput`
-  handles the success check and generated-file lifecycle for output adapters.
+  handles the success check and generated-file lifecycle for output adapters. The `wrapperMain` overload
+  that takes only a callback lets one adapter find the vendor tool using the installed filename.
 - [`scratch.hpp`](./include/scratch.hpp) provides stable identifiers and locked scratch directories for tools whose
   intermediate filenames can appear in outputs. Pass the directory descriptor to `Tool::run` so the compiler
   can hold the lock across `exec`.
@@ -78,7 +79,8 @@ Nixpkgs' static toolchain links the library and musl into each adapter. The vend
 | `fatbinary` | Remaps matching image identifiers and the source paths in embedded PTX when requested. [Fat binary wrapper](../packages/cuda_nvcc/README.md#ptxas-and-fatbinary-wrappers) |
 | `nvprune` | Zeros archive member and symbol table timestamps, user IDs, and group IDs. Standalone object outputs retain their contents. [Package](../packages/cuda_nvprune/package.nix) |
 | `tileiras` | The existing package wrapper defaults `CUDA_ROOT` for toolkit discovery. When it resolves `ptxas` through `cuda_nvcc`, the assembler remaps source paths for the Tile IR compilation. [Package](../packages/cuda_tileiras.nix) |
-| `cudafe++`, `cicc`, `bin2c` | Internal frontend and embedding stages can carry paths from their inputs. The public tool wrappers handle PTX source directives, fat binary identifiers, and toolkit notes at the relevant output boundaries. |
+| `cudafe++`, `cicc` | Share an adapter that remaps the original source path used to derive internal symbol names when `BUILD_PATH_PREFIX_MAP` is set. |
+| `bin2c` | Embeds its input bytes in generated C. Frontend, assembler, and fat binary adapters remap paths before this stage. |
 | `__nvcc_device_query` | `nvcc -arch=native` uses this helper to choose code generation targets from the host's GPUs. Use explicit architectures for hardware-independent builds. |
 | `cuobjdump`, `nvdisasm`, `tileirdisasm`, `cu++filt` | These inspection tools expose information from their inputs. Use them to verify fixes at the producer. |
 | `ctadvisor`, CUDA-GDB, Nsight, Compute Sanitizer | These tools report compilation timings, runtime observations, or source locations for diagnostics. Their reports are distinct from compiler artifacts. |

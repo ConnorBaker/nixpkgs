@@ -147,8 +147,10 @@ inline int exitStatus(int status) {
 // A public tool and its vendor executable installed beside it.
 class Tool {
   public:
-    explicit Tool(std::string name) : name_(std::move(name)) {
-        const auto bin = executable().parent_path();
+    explicit Tool(const char *name) {
+        const auto self = executable();
+        name_ = name ? name : self.filename().native();
+        const auto bin = self.parent_path();
         public_ = bin / name_;
         wrapped_ = bin / ("." + name_ + "-wrapped");
     }
@@ -190,9 +192,14 @@ template <typename Main> int wrapperMain(const char *name, Main main) {
     try {
         return main(Tool(name));
     } catch (const std::exception &error) {
-        std::cerr << name << " wrapper: error: " << error.what() << '\n';
+        std::cerr << (name ? name : "CUDA tool") << " wrapper: error: " << error.what() << '\n';
         return 1;
     }
+}
+
+// A single adapter can be copied to multiple public tool paths.
+template <typename Main> int wrapperMain(Main main) {
+    return wrapperMain(nullptr, main);
 }
 
 } // namespace cudaWrapper

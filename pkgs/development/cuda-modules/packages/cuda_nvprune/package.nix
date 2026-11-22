@@ -10,11 +10,11 @@ buildRedist (finalAttrs: {
 
   outputs = [ "out" ];
 
-  postInstall = lib.optionalString finalAttrs.finalPackage.meta.available ''
-    nixLog "wrapping nvprune to normalize archive member timestamps and ownership"
-    mv --verbose "''${!outputBin:?}/bin/nvprune" "''${!outputBin:?}/bin/.nvprune-wrapped"
-    install --mode=0755 "${finalAttrs.passthru.nvpruneWrapper}/bin/nvprune-wrapper" "''${!outputBin:?}/bin/nvprune"
-  '';
+  postInstall = lib.optionalString finalAttrs.finalPackage.meta.available (
+    callPackage ../../wrapper/install-tool-wrappers.nix { } {
+      wrappers.nvprune = finalAttrs.passthru.nvpruneWrapper;
+    }
+  );
 
   passthru.nvpruneWrapper = callPackage ../../wrapper/mk-tool-wrapper.nix { } {
     name = "nvprune-wrapper";

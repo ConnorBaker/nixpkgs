@@ -31,6 +31,7 @@ pkgsStatic.stdenv.mkDerivation {
 
   meta = {
     inherit description;
+    mainProgram = name;
     license = lib.licenses.mit;
     platforms = lib.platforms.linux;
     teams = [ lib.teams.cuda ];

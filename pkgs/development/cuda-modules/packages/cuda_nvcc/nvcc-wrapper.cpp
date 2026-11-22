@@ -130,10 +130,14 @@ int compile(const cudaWrapper::Tool &tool, const Arguments &args) {
     const auto build = inspect(args, cwd.native());
     if (!build) return tool.exec(args);
 
+    const cudaWrapper::PathPrefixMap paths(
+        build->seed || build->ptx ? environment("BUILD_PATH_PREFIX_MAP") : "");
     Arguments command;
     if (build->seed) {
-        cudaWrapper::StableId seed(cwd.native());
-        seed.add(build->sources.front());
+        const auto &source = build->sources.front();
+        const auto mapped = paths.remap((cwd / source).native());
+        cudaWrapper::StableId seed(mapped ? std::string_view{} : cwd.native());
+        seed.add(mapped ? *mapped : source);
         command.push_back("--frandom-seed=nvcc-" + seed.finish());
     }
 
@@ -149,9 +153,8 @@ int compile(const cudaWrapper::Tool &tool, const Arguments &args) {
     }
 
     command.insert(command.end(), args.begin(), args.end());
-    const cudaWrapper::PathPrefixMap paths(build->ptx ? environment("BUILD_PATH_PREFIX_MAP") : "");
     std::vector<cudaWrapper::GeneratedFile> ptxOutputs;
-    if (!paths.empty()) {
+    if (build->ptx && !paths.empty()) {
         for (auto &path : build->ptxPaths()) {
             if (path != "-" && path != "/dev/stdout" && !cudaWrapper::isSpecialFile(path))
                 ptxOutputs.emplace_back(std::move(path));

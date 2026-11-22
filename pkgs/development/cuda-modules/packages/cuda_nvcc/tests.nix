@@ -240,6 +240,9 @@ in
         touch "$out"
       '';
 }
+// lib.optionalAttrs seeds {
+  nvcc-mapped-builds = mkScriptTest ./tests/nvcc-mapped-builds.sh;
+}
 // lib.optionalAttrs recordsCommandLine {
   # Link-time optimization also records -nvvmpath, which is in cuda_nvcc.
   # NOTE: With caller.cu and answer.cu, only ptxas records its command line.

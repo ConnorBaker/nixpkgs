@@ -53,7 +53,8 @@ It forwards them intact and skips non-compilation invocations such as `--version
 For compilations it can add:
 
 - `--frandom-seed` from CUDA 12.9 for a single source file. The value is derived from the working directory and source
-  argument. NVIDIA requires different seeds for different translation units, and one invocation can take only one seed.
+  argument, or from the mapped source path when `BUILD_PATH_PREFIX_MAP` matches it. NVIDIA requires different seeds
+  for different translation units, and one invocation can take only one seed.
 - `--keep --keep-dir=$TMPDIR/nvcc-keep-<id>` (using `/tmp` if `TMPDIR` is unset). The directory name hashes the
   working directory and effective arguments, since the path can appear in debug information. Identical invocations
   serialize access to this directory. After the compiler exits, the wrapper removes the directory if it can
@@ -71,8 +72,11 @@ with the same signal. For other invocations it directly executes nvcc. The real 
 `nvcc` path so toolkit discovery works through symlinks and CMake recognizes its version output.
 
 CUDA before 12.9 can still put PIDs in internal symbol names. The same limitation can affect compilations of
-multiple source files in one invocation. The checkout and build directory, debug metadata, and the remaining
-compiler inputs can still affect the output.
+multiple source files in one invocation. With `BUILD_PATH_PREFIX_MAP`, the frontend adapters remap the
+original source path that `cudafe++` and `cicc` use to derive another part of the internal symbol name. This makes
+ordinary and relocatable objects and line-info PTX reproducible across mapped build roots in the test below.
+Full device debug information records the working directory separately in `DW_AT_comp_dir`.
+Standalone LTO IR (`-dlto -ltoir`) also differed across mapped build roots in CUDA 13.5.
 
 ### Testing
 
@@ -82,6 +86,8 @@ paths and version-dependent expectations.
 - `cudaPackages.cuda_nvcc.tests.nvcc-reproducible` compiles sources twice and compares the results. It also checks
   that `bin/.nvcc-wrapped` without the wrapper still writes different objects. That check fails when a CUDA release no
   longer needs the options.
+- `cudaPackages.cuda_nvcc.tests.nvcc-mapped-builds` compares objects and line-info PTX built in two directories
+  mapped to the same source prefix.
 - `cudaPackages.cuda_nvcc.tests.nvcc-wrapper` checks caller-supplied options and compiles through an external symlink.
 - `cudaPackages.cuda_nvcc.tests.nvcc-process` uses a stand-in compiler to check concurrent invocations, signal
   forwarding, and scratch directory recovery after `SIGKILL`.
