@@ -52,6 +52,8 @@ nvcc -arch="$arch" -E kernel.cu > /dev/null
 # The vendor driver needs to find the installed profile even through an external symlink.
 mkdir linked
 ln -s "$toolkit/bin/nvcc" linked/nvcc
-env -i TMPDIR="$TMPDIR" ./linked/nvcc -arch="$arch" --ptx kernel.cu -o linked.ptx
+# The test supplies the split CUDA include paths explicitly.
+env -i TMPDIR="$TMPDIR" \
+  ./linked/nvcc "$@" -arch="$arch" --ptx kernel.cu -o linked.ptx
 
 checkScratchCleanup
