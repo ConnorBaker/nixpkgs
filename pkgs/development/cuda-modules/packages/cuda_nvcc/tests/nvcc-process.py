@@ -32,6 +32,11 @@ if run == "closed-stdout":
     except OSError:
         sys.exit()
     sys.exit("the wrapper reopened stdout")
+if run == "self-terminate":
+    previous = signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGTERM})
+    assert signal.SIGTERM in previous
+    os.kill(os.getpid(), signal.SIGTERM)
+    sys.exit("the vendor survived SIGTERM")
 keep = pathlib.Path(next(x.split("=", 1)[1] for x in sys.argv if x.startswith("--keep-dir=")))
 (keep / "owned").touch(exist_ok=False)
 if run == "second":
@@ -96,6 +101,17 @@ assert (keep / "owned").is_file()
                 check=True,
                 timeout=10,
             )
+
+        # A vendor can unblock an inherited signal and terminate from it.
+        terminated = subprocess.run(
+            [driver, *compile_args],
+            cwd=work,
+            env={**env, "RUN": "self-terminate"},
+            preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM}),
+            timeout=10,
+        )
+        assert terminated.returncode == -signal.SIGTERM, terminated.returncode
+        assert not list(work.glob("nvcc-keep-*"))
 
         def start(name):
             return subprocess.Popen(
@@ -168,6 +184,21 @@ assert (keep / "owned").is_file()
                 if process.poll() is None:
                     process.kill()
                     process.wait()
+
+        # Bash preserves the inherited disposition. Python installs SIG_IGN at startup.
+        bash = shutil.which("bash")
+        assert bash is not None
+        fake.write_text(f"#!{bash}\nkill -s PIPE $$\nexit 42\n")
+        for args in (["--version"], compile_args):
+            for restore, status in ((True, -signal.SIGPIPE), (False, 42)):
+                result = subprocess.run(
+                    [driver, *args],
+                    cwd=work,
+                    env=env,
+                    restore_signals=restore,
+                    timeout=10,
+                )
+                assert result.returncode == status, result.returncode
 
 
 if __name__ == "__main__":

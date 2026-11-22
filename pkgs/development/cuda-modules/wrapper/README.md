@@ -10,6 +10,7 @@ its own runtime.
 
 - The wrapper resolves its own installed path through `/proc/self/exe` and launches the vendor executable
   `.<tool>-wrapped` beside it. `nvcc` uses its installed public path as `argv[0]` to find its toolkit profile.
+  The vendor inherits closed standard descriptors and the caller's `SIGPIPE` disposition.
 - Input adapters preserve argument order and explicit settings within each tool's policy. For `ptxas` and
   `fatbinary`, a changed options file is replayed at the same position through an anonymous file descriptor.
   Nested files retain their boundaries, and large operands stay in files. If either adapter cannot inspect

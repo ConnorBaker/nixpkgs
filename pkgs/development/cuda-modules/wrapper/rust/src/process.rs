@@ -1,6 +1,6 @@
 use crate::arguments::{Argument, Arguments, RewrittenArgs};
 use crate::files::{Artifact, GeneratedFile};
-use libc::{SIGCHLD, SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
+use libc::{SIGCHLD, SIGHUP, SIGINT, SIGPIPE, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
@@ -14,23 +14,31 @@ use std::path::PathBuf;
 use std::process::{Command, ExitCode, ExitStatus};
 use std::sync::atomic::{AtomicU8, Ordering};
 
-static CLOSED_STDIO: AtomicU8 = AtomicU8::new(0);
+const IGNORE_SIGPIPE: u8 = 1 << 3;
+static INVOCATION: AtomicU8 = AtomicU8::new(0);
 
-// The Rust runtime fills closed standard descriptors before main. Record
-// their original state at ELF startup so we can preserve it in the vendor.
+// Capture the caller's state before Rust fills closed standard descriptors
+// and sets its own SIGPIPE policy.
 #[used]
 #[unsafe(link_section = ".init_array")]
-static SAVE_STDIO: extern "C" fn() = save_stdio;
+static SAVE_INVOCATION: extern "C" fn() = save_invocation;
 
-extern "C" fn save_stdio() {
-    let mut closed = 0;
+extern "C" fn save_invocation() {
+    let mut state = 0;
     for fd in 0..=libc::STDERR_FILENO {
         // SAFETY: F_GETFD takes no third argument and does not modify fd.
         if unsafe { libc::fcntl(fd, libc::F_GETFD) } < 0 {
-            closed |= 1 << fd;
+            state |= 1 << fd;
         }
     }
-    CLOSED_STDIO.store(closed, Ordering::Relaxed);
+    let mut action = MaybeUninit::<libc::sigaction>::zeroed();
+    // SAFETY: sigaction initializes the output on success. A null input queries the current action.
+    if unsafe { libc::sigaction(SIGPIPE, std::ptr::null(), action.as_mut_ptr()) } == 0
+        && unsafe { action.assume_init().sa_sigaction } == libc::SIG_IGN
+    {
+        state |= IGNORE_SIGPIPE;
+    }
+    INVOCATION.store(state, Ordering::Relaxed);
 }
 
 pub struct Tool {
@@ -57,16 +65,23 @@ impl Tool {
         let mut command = Command::new(&self.vendor);
         command.arg0(&self.argv0);
         command.args(args.iter().map(|arg| OsStr::from_bytes(arg)));
-        let closed = CLOSED_STDIO.load(Ordering::Relaxed);
-        if closed != 0 {
-            // SAFETY: close is async-signal-safe. These descriptors were
-            // closed in the caller, and the wrapper installs no stdio pipes.
+        let state = INVOCATION.load(Ordering::Relaxed);
+        if state != 0 {
+            // SAFETY: close and signal are async-signal-safe. These descriptors
+            // were closed in the caller, and the wrapper installs no stdio pipes.
             unsafe {
                 command.pre_exec(move || {
                     for fd in 0..=libc::STDERR_FILENO {
-                        if closed & (1 << fd) != 0 {
+                        if state & (1 << fd) != 0 {
                             libc::close(fd);
                         }
+                    }
+                    // Command resets SIGPIPE before calling this hook. exec
+                    // normally preserves an inherited SIG_IGN disposition.
+                    if state & IGNORE_SIGPIPE != 0
+                        && libc::signal(SIGPIPE, libc::SIG_IGN) == libc::SIG_ERR
+                    {
+                        return Err(io::Error::last_os_error());
                     }
                     Ok(())
                 });
@@ -185,6 +200,7 @@ pub fn wrapper_main(name: &'static str, wrapper: impl FnOnce(Tool) -> io::Result
 struct SignalMask {
     watched: libc::sigset_t,
     original: libc::sigset_t,
+    original_child: Option<libc::sigaction>,
 }
 
 impl SignalMask {
@@ -192,9 +208,6 @@ impl SignalMask {
         // SAFETY: All-zero sigset_t storage is valid for both libc targets.
         // Zero original before the kernel writes its (possibly smaller) mask.
         unsafe {
-            if libc::signal(SIGCHLD, libc::SIG_DFL) == libc::SIG_ERR {
-                return Err(io::Error::last_os_error());
-            }
             let mut watched = std::mem::zeroed();
             let mut original = std::mem::zeroed();
             libc::sigemptyset(&mut watched);
@@ -202,15 +215,33 @@ impl SignalMask {
                 libc::sigaddset(&mut watched, signal);
             }
             check(libc::sigprocmask(libc::SIG_BLOCK, &watched, &mut original))?;
-            Ok(Self { watched, original })
+            let mut mask = Self {
+                watched,
+                original,
+                original_child: None,
+            };
+            // SIG_IGN or SA_NOCLDWAIT inherited by the supervisor would
+            // cause the kernel to reap the vendor before we can wait for it.
+            let mut action: libc::sigaction = std::mem::zeroed();
+            action.sa_sigaction = libc::SIG_DFL;
+            libc::sigemptyset(&mut action.sa_mask);
+            let mut original_child = std::mem::zeroed();
+            check(libc::sigaction(SIGCHLD, &action, &mut original_child))?;
+            mask.original_child = Some(original_child);
+            Ok(mask)
         }
     }
 }
 
 impl Drop for SignalMask {
     fn drop(&mut self) {
-        // SAFETY: original was initialized by sigprocmask in block().
-        unsafe { libc::sigprocmask(libc::SIG_SETMASK, &self.original, std::ptr::null_mut()) };
+        // SAFETY: The saved action and mask were initialized in block().
+        unsafe {
+            if let Some(action) = &self.original_child {
+                libc::sigaction(SIGCHLD, action, std::ptr::null_mut());
+            }
+            libc::sigprocmask(libc::SIG_SETMASK, &self.original, std::ptr::null_mut());
+        }
     }
 }
 
@@ -236,6 +267,10 @@ pub fn exit_status(status: ExitStatus) -> i32 {
         // SAFETY: status supplies a valid signal number.
         unsafe {
             libc::signal(signal, libc::SIG_DFL);
+            let mut only = std::mem::zeroed();
+            libc::sigemptyset(&mut only);
+            libc::sigaddset(&mut only, signal);
+            libc::sigprocmask(libc::SIG_UNBLOCK, &only, std::ptr::null_mut());
             libc::raise(signal);
         }
         return 128 + signal;
