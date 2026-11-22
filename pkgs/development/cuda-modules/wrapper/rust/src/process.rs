@@ -119,6 +119,7 @@ impl Tool {
             command.process_group(0);
         }
         let original = mask.original;
+        let original_child = mask.original_child;
         let parent = std::process::id() as libc::pid_t;
         let lease = lease.map(AsRawFd::as_raw_fd);
         // SAFETY: the closure uses only async-signal-safe system calls and
@@ -133,11 +134,7 @@ impl Tool {
                     // Keep the open file description alive without using stdio.
                     check(libc::fcntl(lease, libc::F_DUPFD, libc::STDERR_FILENO + 1))?;
                 }
-                check(libc::sigprocmask(
-                    libc::SIG_SETMASK,
-                    &original,
-                    std::ptr::null_mut(),
-                ))
+                restore_signals(&original, &original_child)
             });
         }
         let mut child = match command.spawn() {
@@ -200,7 +197,7 @@ pub fn wrapper_main(name: &'static str, wrapper: impl FnOnce(Tool) -> io::Result
 struct SignalMask {
     watched: libc::sigset_t,
     original: libc::sigset_t,
-    original_child: Option<libc::sigaction>,
+    original_child: libc::sigaction,
 }
 
 impl SignalMask {
@@ -215,33 +212,41 @@ impl SignalMask {
                 libc::sigaddset(&mut watched, signal);
             }
             check(libc::sigprocmask(libc::SIG_BLOCK, &watched, &mut original))?;
-            let mut mask = Self {
-                watched,
-                original,
-                original_child: None,
-            };
             // SIG_IGN or SA_NOCLDWAIT inherited by the supervisor would
             // cause the kernel to reap the vendor before we can wait for it.
             let mut action: libc::sigaction = std::mem::zeroed();
             action.sa_sigaction = libc::SIG_DFL;
             libc::sigemptyset(&mut action.sa_mask);
             let mut original_child = std::mem::zeroed();
-            check(libc::sigaction(SIGCHLD, &action, &mut original_child))?;
-            mask.original_child = Some(original_child);
-            Ok(mask)
+            if let Err(error) = check(libc::sigaction(SIGCHLD, &action, &mut original_child)) {
+                libc::sigprocmask(libc::SIG_SETMASK, &original, std::ptr::null_mut());
+                return Err(error);
+            }
+            Ok(Self {
+                watched,
+                original,
+                original_child,
+            })
         }
     }
 }
 
 impl Drop for SignalMask {
     fn drop(&mut self) {
-        // SAFETY: The saved action and mask were initialized in block().
-        unsafe {
-            if let Some(action) = &self.original_child {
-                libc::sigaction(SIGCHLD, action, std::ptr::null_mut());
-            }
-            libc::sigprocmask(libc::SIG_SETMASK, &self.original, std::ptr::null_mut());
-        }
+        let _ = restore_signals(&self.original, &self.original_child);
+    }
+}
+
+fn restore_signals(mask: &libc::sigset_t, child: &libc::sigaction) -> io::Result<()> {
+    // SAFETY: SignalMask saved both values before changing them.
+    unsafe {
+        let action = check(libc::sigaction(SIGCHLD, child, std::ptr::null_mut()));
+        let mask = check(libc::sigprocmask(
+            libc::SIG_SETMASK,
+            mask,
+            std::ptr::null_mut(),
+        ));
+        action.and(mask)
     }
 }
 

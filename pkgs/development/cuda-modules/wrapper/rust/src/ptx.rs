@@ -113,7 +113,11 @@ fn token<'a>(input: &mut &'a [u8]) -> &'a [u8] {
             escaped = !escaped && byte == b'\\';
             close
         });
-        end.map_or(input.len(), |index| index + 2)
+        let Some(index) = end else {
+            *input = b"";
+            return b"";
+        };
+        index + 2
     } else if identifier(input[0]) {
         input.iter().take_while(|&&byte| identifier(byte)).count()
     } else {

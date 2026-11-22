@@ -17,74 +17,7 @@ def main():
         driver = work / "nvcc"
         shutil.copy(sys.argv[1], driver)
         fake = work / ".nvcc-wrapped"
-        fake.write_text(
-            f"#!{sys.executable}\n"
-            """
-import json, os, pathlib, signal, subprocess, sys, time
-
-run = os.environ["RUN"]
-if run == "arguments":
-    print(json.dumps(sys.argv[1:]))
-    sys.exit()
-if run == "closed-stdout":
-    try:
-        os.fstat(1)
-    except OSError:
-        sys.exit()
-    sys.exit("the wrapper reopened stdout")
-if run == "self-terminate":
-    previous = signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGTERM})
-    assert signal.SIGTERM in previous
-    os.kill(os.getpid(), signal.SIGTERM)
-    sys.exit("the vendor survived SIGTERM")
-keep = pathlib.Path(next(x.split("=", 1)[1] for x in sys.argv if x.startswith("--keep-dir=")))
-(keep / "owned").touch(exist_ok=False)
-if run == "second":
-    worker = subprocess.Popen([sys.executable, "-c", '''
-import pathlib, signal
-
-def on_term(*_):
-    pathlib.Path("worker.signal").touch()
-    raise SystemExit
-
-signal.signal(signal.SIGTERM, on_term)
-pathlib.Path("worker.ready").touch()
-while True:
-    signal.pause()
-'''])
-
-    def on_term(*_):
-        try:
-            worker.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            worker.kill()
-            worker.wait()
-        signal.signal(signal.SIGTERM, signal.SIG_DFL)
-        os.kill(os.getpid(), signal.SIGTERM)
-
-    signal.signal(signal.SIGTERM, on_term)
-    while not pathlib.Path("worker.ready").exists():
-        time.sleep(0.01)
-elif run == "crash":
-    subprocess.Popen([sys.executable, "-c", '''
-import pathlib, sys, time
-
-pathlib.Path("orphan.ready").touch()
-deadline = time.monotonic() + 15
-while not pathlib.Path("orphan.release").exists() and time.monotonic() < deadline:
-    time.sleep(0.01)
-assert (pathlib.Path(sys.argv[1]) / "owned").is_file()
-pathlib.Path("orphan.done").touch()
-''', str(keep)], close_fds=False)
-    while not pathlib.Path("orphan.ready").exists():
-        time.sleep(0.01)
-
-pathlib.Path(run + ".ready").write_text(str(keep))
-while not pathlib.Path(run + ".release").exists():
-    time.sleep(0.01)
-assert (keep / "owned").is_file()
-"""
-        )
+        fake.write_text(f"#!{sys.executable} -P\n" + Path(sys.argv[2]).read_text())
         fake.chmod(0o755)
         env = {**os.environ, "TMPDIR": directory}
         env.pop("NVCC_PREPEND_FLAGS", None)
@@ -98,6 +31,17 @@ assert (keep / "owned").is_file()
                 cwd=work,
                 env={**env, "RUN": "closed-stdout"},
                 preexec_fn=lambda: os.close(1),
+                check=True,
+                timeout=10,
+            )
+
+        # Only the supervisor needs to reset SIGCHLD to wait for a child.
+        for args in (["--version"], compile_args):
+            subprocess.run(
+                [driver, *args],
+                cwd=work,
+                env={**env, "RUN": "ignore-sigchld"},
+                preexec_fn=lambda: signal.signal(signal.SIGCHLD, signal.SIG_IGN),
                 check=True,
                 timeout=10,
             )

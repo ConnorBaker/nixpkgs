@@ -77,6 +77,9 @@ compiler inputs can still affect the output.
 
 ### Testing
 
+The longer test scripts and stand-in executables are in [`tests/`](./tests). The Nix definitions supply toolkit
+paths and version-dependent expectations.
+
 - `cudaPackages.cuda_nvcc.tests.nvcc-reproducible` compiles sources twice and compares the results. It also checks
   that `bin/.nvcc-wrapped` without the wrapper still writes different objects. That check fails when a CUDA release no
   longer needs the options.
