@@ -25,6 +25,6 @@ int main(int argc, char **argv) {
         if (!path) return tool.exec(argv);
         if (cudaWrapper::isSpecialFile(*path)) return tool.exec(argv);
 
-        return tool.editOutput(argv, std::move(*path), [](auto &file) { cudaWrapper::normalizeArchiveDates(file); });
+        return tool.editOutput(argv, std::move(*path), [](auto &file) { cudaWrapper::normalizeArchiveMetadata(file); });
     });
 }

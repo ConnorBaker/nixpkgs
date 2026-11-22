@@ -8,18 +8,19 @@
 
 namespace cudaWrapper {
 
-// Edit member dates in regular ar archives. The member layout and symbol
+// Clear member dates and ownership in regular ar archives. The member layout and symbol
 // table offsets stay intact. Other outputs, such as standalone ELF objects,
 // are passed through.
-template <typename Output> void normalizeArchiveDates(Output &output) {
+template <typename Output> void normalizeArchiveMetadata(Output &output) {
     constexpr std::string_view magic = "!<arch>\n";
     if (output.size() < magic.size()) return;
     const auto signature = output.read(0, magic.size());
     if (std::string_view(signature.data(), signature.size()) != magic) return;
 
     constexpr std::size_t headerSize = 60;
-    constexpr std::size_t dateOffset = 16;
-    constexpr std::string_view date = "0           ";
+    constexpr std::size_t metadataOffset = 16;
+    // The date, UID, and GID fields are adjacent.
+    constexpr std::string_view metadata = "0           0     0     ";
     const auto malformed = [] { return std::runtime_error("the output is a malformed ar archive"); };
     for (std::uint64_t offset = magic.size(); offset < output.size();) {
         if (output.size() - offset < headerSize) throw malformed();
@@ -35,11 +36,12 @@ template <typename Output> void normalizeArchiveDates(Output &output) {
             size % 2 > output.size() - offset - headerSize - size)
             throw malformed();
 
-        const std::string_view oldDate(header.data() + dateOffset, date.size());
-        // The GNU long-name table can have a blank field. Keep that spelling.
-        const bool blankLongNamesDate = header[0] == '/' && header[1] == '/' &&
-                                        oldDate.find_first_not_of(' ') == std::string_view::npos;
-        if (oldDate != date && !blankLongNamesDate) output.write(offset + dateOffset, std::span(date));
+        const std::string_view oldMetadata(header.data() + metadataOffset, metadata.size());
+        // The GNU long-name table can have blank date and ownership fields.
+        const bool blankLongNamesMetadata = header[0] == '/' && header[1] == '/' &&
+                                            oldMetadata.find_first_not_of(' ') == std::string_view::npos;
+        if (oldMetadata != metadata && !blankLongNamesMetadata)
+            output.write(offset + metadataOffset, std::span(metadata));
         offset += headerSize + size + size % 2;
     }
 }
