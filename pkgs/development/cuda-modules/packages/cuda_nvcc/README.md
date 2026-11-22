@@ -51,17 +51,16 @@ the path. The wrapper reads only the ELF headers it needs and those sections, an
 change, so the output's size and layout are unchanged: only the recorded command lines change, e.g. to
 `-L /nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-cuda_nvcc-13.4.92/...`.
 
-The only arguments the wrapper interprets are those naming the output (the last `-o` or `--output-file`), including
-those in options files (`-optf`), which nvcc uses for long command lines. It depends on nothing else of nvlink: not on
-the format of the note, nor on which arguments nvlink records.
+The wrapper finds the last explicit `-o` or `--output-file`, including in options files (`-optf`), which nvcc uses
+for long command lines. It skips other options' operands when searching for the output. Help and version calls
+run without artifact edits.
 
-The wrapper forwards `SIGHUP`, `SIGINT`, `SIGQUIT`, `SIGTERM`, `SIGUSR1`, and `SIGUSR2` to nvlink, so that nvlink
-receives each signal sent to the wrapper once:
+The wrapper handles `SIGHUP`, `SIGINT`, `SIGQUIT`, `SIGTERM`, `SIGUSR1`, and `SIGUSR2` while it waits for nvlink.
 
 - In the foreground of a terminal, nvlink stays in the wrapper's process group, so signals from the terminal (e.g.
   Ctrl-C) reach it directly, and the wrapper doesn't forward them.
-- Otherwise, as in a build, nvlink runs in a process group of its own, so a signal sent to the wrapper's process group
-  (e.g. by `timeout`) reaches nvlink only by being forwarded.
+- Otherwise, as in a build, nvlink runs in a process group of its own. The wrapper forwards signals it receives
+  to nvlink's group.
 
 nvlink is killed if the wrapper dies. If nvlink fails, the wrapper exits with its status, or is killed by the same
 signal, and leaves the output as nvlink left it.
@@ -103,7 +102,8 @@ When the wrapper fails, run the command with `bin/.nvlink-wrapped` in place of `
 
 ### Development
 
-The wrapper is C++23 and builds with stdenv's compiler. Defining `NVLINK_WRAPPER_NO_MAIN` omits `main` and the code
-which runs nvlink, so `tokenize`, `findOutput`, and `scrub` (on a `std::span<char>` holding an output) can be exercised
-directly, e.g. by a fuzzer including the source file. Before changing it, check it with `clang-tidy`, `cppcheck`,
-`g++ -fanalyzer`, and a build with `-fsanitize=address,undefined` running the tests above.
+The wrapper is C++23 and builds with stdenv's compiler. Defining `NVLINK_WRAPPER_NO_MAIN` omits `main`, so
+`cudaWrapper::tokenize`, `findOutput`, and `scrub` (on a `std::span<char>` holding an output) can be exercised
+directly, e.g. by a fuzzer including the source file with `../../wrapper/include` on its include path. Before changing it,
+check it with `clang-tidy`, `cppcheck`, `g++ -fanalyzer`, and a build with `-fsanitize=address,undefined` running
+the tests above.

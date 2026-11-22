@@ -288,6 +288,10 @@ in
       # Outside the foreground of a terminal, as here, nvlink runs in a process group of its own.
       expect "$(cat log)" $'x y\n\nFAKE_ENV=a b\npid='"$(sed -n 's/^pid=//p' log)"$'\ngroup=own' \
         "nvlink's arguments, environment, and process group"
+      FAKE=exit FAKE_STATUS=0 ./nvlink -L -o
+      FAKE=exit FAKE_STATUS=0 ./nvlink -L -optf
+      FAKE=exit FAKE_STATUS=0 ./nvlink -o unused --version
+      [[ ! -e unused ]]
       expect "$(status ./alone/nvlink)" 127 "the exit status without .nvlink-wrapped next to the wrapper"
       # The wrapper finds nvlink next to itself rather than to the link it was run through.
       mkdir linked
