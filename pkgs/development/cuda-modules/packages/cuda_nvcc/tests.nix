@@ -254,6 +254,30 @@ in
         touch "$out"
       '';
 
+  ptxas-process =
+    runCommand "${cuda_nvcc.name}-ptxas-process"
+      {
+        meta = { inherit (cuda_nvcc.meta) badPlatforms platforms teams; };
+      }
+      ''
+        cp ${cuda_nvcc.ptxasWrapper}/bin/ptxas-wrapper ptxas
+        cat > .ptxas-wrapped <<'EOF'
+        #!${python3}/bin/python3
+        import os
+        import sys
+
+        if os.path.lexists("/proc/self/fd/0"):
+            sys.exit("the wrapper reopened stdin")
+        with open(sys.argv[1], "rb") as source:
+            if b'"/mapped/source.cu"' not in source.read():
+                sys.exit("the vendor did not receive the rewritten PTX")
+        EOF
+        chmod +x .ptxas-wrapped
+        printf '.version 8.0\n.file 1 "%s/source.cu"\n' "$PWD" > input.ptx
+        BUILD_PATH_PREFIX_MAP="/mapped=$PWD" ./ptxas input.ptx <&-
+        touch "$out"
+      '';
+
   nvcc-ptx-source-paths = mkTest "nvcc-ptx-source-paths" ''
     mkdir 'source tree' outputs
     cp kernel.cu 'source tree/kernel.cu'

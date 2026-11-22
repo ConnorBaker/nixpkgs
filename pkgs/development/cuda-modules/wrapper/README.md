@@ -3,7 +3,7 @@
 This header-only C++23 library provides the Linux process and file handling used by CUDA wrappers. A wrapper can
 give the vendor tool reproducible inputs or edit metadata in an artifact it produces. CUDA packages opt in per
 executable at build time by installing an adapter at the executable's public path. There is no runtime registry.
-The library is compiled into each adapter.
+Nixpkgs' static toolchain links the library and musl into each adapter. The vendor executable uses its own runtime.
 
 ## Invocation semantics
 
@@ -11,8 +11,9 @@ The library is compiled into each adapter.
   `.<tool>-wrapped` beside it. `nvcc` uses its installed public path as `argv[0]` to find its toolkit profile.
 - Input adapters preserve argument order and explicit settings within each tool's policy. For `ptxas` and
   `fatbinary`, a changed options file is replayed at the same position through an anonymous file descriptor.
-  Nested files retain their boundaries, and large operands stay in files. If either adapter cannot inspect
-  the options files, it invokes the vendor with the caller's arguments.
+  Nested files retain their boundaries, and large operands stay in files. Anonymous inputs use descriptors
+  above standard input, output, and error, so the vendor inherits the caller's standard descriptors. If
+  either adapter cannot inspect the options files, it invokes the vendor with the caller's arguments.
 - When an adapter needs to wait, the vendor's error exit or termination signal takes precedence over artifact edits.
   In a background build the wrapper forwards catchable cancellation signals to the vendor's process group.
   In the foreground, terminal signals reach the shared group directly. The wrapper forwards signals sent to its
@@ -45,8 +46,9 @@ The library is compiled into each adapter.
 ## Library interfaces
 
 - [`arguments.hpp`](./include/arguments.hpp) scans options and their operands, locates a generated output, or replaces
-  selected operands. The adapter supplies the tool's option table. With `ptxas` and `fatbinary`, options files
-  discard escaped double quotes, so an operand rewrite requiring a literal double quote in an options file is skipped.
+  selected operands. The adapter supplies its option table. Each operand is consumed within the argument list that
+  contains its option. With `ptxas` and `fatbinary`, options files discard escaped double quotes, so the wrapper
+  skips operand replacements that require a literal double quote in an options file.
 - [`process.hpp`](./include/process.hpp) provides `Tool::exec` when the adapter can hand off to the vendor executable and
   `Tool::run` when it needs to wait, clean up, or edit the result. `run` forwards signals and returns a wait status.
   Call `exitStatus` after cleanup to propagate the exit code or termination signal. `Tool::editOutput`

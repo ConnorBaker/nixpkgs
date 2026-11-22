@@ -39,17 +39,34 @@ class FileDescriptor {
     int fd_;
 };
 
+template <typename Transfer, typename Byte>
+bool transferAllAt(Transfer transfer, int fd, std::span<Byte> bytes, std::uint64_t offset) {
+    while (!bytes.empty()) {
+        const auto count = transfer(fd, bytes.data(), bytes.size(), static_cast<off_t>(offset));
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) {
+            if (count == 0) errno = EIO;
+            return false;
+        }
+        offset += count;
+        bytes = bytes.subspan(count);
+    }
+    return true;
+}
+
 // Expose rewritten input as a file without leaving anything to clean up.
 inline FileDescriptor anonymousInput(const char *name, std::string_view contents) {
     FileDescriptor fd(memfd_create(name, 0)); // The vendor inherits the descriptor across exec.
     if (!fd) throw std::runtime_error(std::string("cannot open ") + name + ": " + std::strerror(errno));
-    while (!contents.empty()) {
-        const auto count = write(fd.get(), contents.data(), contents.size());
-        if (count < 0 && errno == EINTR) continue;
-        if (count <= 0) throw std::runtime_error(std::string("cannot write ") + name + ": " + std::strerror(errno));
-        contents.remove_prefix(static_cast<std::size_t>(count));
-    }
-    return fd;
+    if (!transferAllAt(pwrite, fd.get(), std::span(contents), 0))
+        throw std::runtime_error(std::string("cannot write ") + name + ": " + std::strerror(errno));
+    if (fd.get() > STDERR_FILENO) return fd;
+
+    // A caller may have closed a standard descriptor. Keep it closed for
+    // the vendor while passing the input through an independent descriptor.
+    FileDescriptor input(fcntl(fd.get(), F_DUPFD, STDERR_FILENO + 1));
+    if (!input) throw std::runtime_error(std::string("cannot duplicate ") + name + ": " + std::strerror(errno));
+    return input;
 }
 
 inline std::string descriptorPath(const FileDescriptor &fd) {
@@ -88,12 +105,7 @@ inline std::string readOptionsFile(const std::string &path, std::size_t &bytesRe
     if (static_cast<std::uintmax_t>(info.st_size) > bytesRemaining)
         throw std::runtime_error("options files exceed the inspection size limit");
     std::string contents(static_cast<std::size_t>(info.st_size), '\0');
-    for (std::size_t offset = 0; offset < contents.size();) {
-        const auto got = read(fd.get(), contents.data() + offset, contents.size() - offset);
-        if (got < 0 && errno == EINTR) continue;
-        if (got <= 0) throw unreadable();
-        offset += static_cast<std::size_t>(got);
-    }
+    if (!transferAllAt(pread, fd.get(), std::span(contents), 0)) throw unreadable();
     bytesRemaining -= contents.size();
     return contents;
 }
@@ -155,12 +167,7 @@ class GeneratedFile {
         std::vector<char> read(std::uint64_t off, std::uint64_t n) const {
             checkFileRange(size_, off, n);
             std::vector<char> bytes(n);
-            for (std::uint64_t done = 0; done < n;) {
-                const ssize_t got = pread(fd_, bytes.data() + done, n - done, static_cast<off_t>(off + done));
-                if (got < 0 && errno == EINTR) continue;
-                if (got <= 0) fileError("cannot read", path_);
-                done += static_cast<std::uint64_t>(got);
-            }
+            if (!transferAllAt(pread, fd_, std::span(bytes), off)) fileError("cannot read", path_);
             return bytes;
         }
 
@@ -178,12 +185,7 @@ class GeneratedFile {
 
       private:
         void writeAt(std::uint64_t off, std::span<const char> bytes) {
-            for (std::uint64_t done = 0; done < bytes.size();) {
-                const ssize_t put = pwrite(fd_, bytes.data() + done, bytes.size() - done, static_cast<off_t>(off + done));
-                if (put < 0 && errno == EINTR) continue;
-                if (put <= 0) fileError("cannot write", path_);
-                done += static_cast<std::uint64_t>(put);
-            }
+            if (!transferAllAt(pwrite, fd_, bytes, off)) fileError("cannot write", path_);
         }
 
         int fd_;

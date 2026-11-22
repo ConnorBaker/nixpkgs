@@ -15,6 +15,7 @@
 #include <sys/prctl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <system_error>
 #include <unistd.h>
 #include <vector>
 
@@ -45,24 +46,52 @@ inline int exec(const std::string &program, char *const argv[], std::string_view
     return 127;
 }
 
+class SignalMask {
+  public:
+    SignalMask() {
+        sigemptyset(&signals_);
+        for (const int sig : {SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2, SIGCHLD})
+            sigaddset(&signals_, sig);
+        if (sigprocmask(SIG_BLOCK, &signals_, &original_) != 0)
+            throw std::system_error(errno, std::generic_category(), "block signals");
+
+        // An inherited SIG_IGN or SA_NOCLDWAIT would let the kernel reap the child.
+        struct sigaction action {};
+        action.sa_handler = SIG_DFL;
+        sigemptyset(&action.sa_mask);
+        if (sigaction(SIGCHLD, &action, &originalChild_) != 0) {
+            const int error = errno;
+            restoreMask();
+            throw std::system_error(error, std::generic_category(), "reset SIGCHLD");
+        }
+    }
+
+    SignalMask(const SignalMask &) = delete;
+    SignalMask &operator=(const SignalMask &) = delete;
+    ~SignalMask() {
+        sigaction(SIGCHLD, &originalChild_, nullptr);
+        restoreMask();
+    }
+
+    int restoreMask() const { return sigprocmask(SIG_SETMASK, &original_, nullptr); }
+    int wait(siginfo_t &info) const { return sigwaitinfo(&signals_, &info); }
+
+  private:
+    sigset_t signals_;
+    sigset_t original_;
+    struct sigaction originalChild_;
+};
+
 // Runs the wrapped program with argv and returns its wait status.
 inline int run(const std::string &program, char *const argv[], std::string_view wrapper, int inheritedFd = -1) {
-    // An ignored SIGCHLD, which is inherited, would let the kernel reap the program without telling the wrapper.
-    static_cast<void>(std::signal(SIGCHLD, SIG_DFL));
-    // Receive the signals to forward, and SIGCHLD, synchronously rather than in a handler.
-    sigset_t signals;
-    sigset_t original;
-    sigemptyset(&signals);
-    for (const int sig : {SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2, SIGCHLD}) sigaddset(&signals, sig);
-    sigprocmask(SIG_BLOCK, &signals, &original);
-
+    const SignalMask signals;
     // In the foreground of a terminal, the program stays in the wrapper's process group, so that it receives the signals
     // from the terminal itself and the wrapper doesn't forward them. Otherwise the program gets a process group of its own,
     // so that a signal sent to the wrapper's process group (e.g. by timeout) can be forwarded to the whole tool tree.
     const bool foreground = inForeground();
     const pid_t parent = getpid();
     const pid_t child = fork();
-    if (child < 0) throw std::runtime_error(std::string("fork: ") + std::strerror(errno));
+    if (child < 0) throw std::system_error(errno, std::generic_category(), "fork");
     if (child == 0) {
         // Don't outlive the wrapper.
         if (prctl(PR_SET_PDEATHSIG, SIGKILL) != 0 || getppid() != parent) _exit(127);
@@ -72,28 +101,29 @@ inline int run(const std::string &program, char *const argv[], std::string_view 
             std::cerr << wrapper << " wrapper: error: cannot inherit descriptor: " << std::strerror(errno) << '\n';
             _exit(127);
         }
-        sigprocmask(SIG_SETMASK, &original, nullptr);
+        if (signals.restoreMask() != 0) _exit(127);
         _exit(exec(program, argv, wrapper));
     }
 
     // Either process can run first. Assign the group before forwarding a pending signal.
     if (!foreground) static_cast<void>(setpgid(child, child));
     for (;;) {
-        siginfo_t info;
-        if (sigwaitinfo(&signals, &info) < 0) continue; // EINTR
-        if (info.si_signo != SIGCHLD) {
-            if (!foreground) {
-                kill(-child, info.si_signo);
-            } else if (info.si_code != SI_KERNEL) {
-                kill(child, info.si_signo);
-            }
-            continue;
-        }
         int status = 0;
-        if (waitpid(child, &status, WNOHANG) == child) {
-            sigprocmask(SIG_SETMASK, &original, nullptr);
-            return status;
+        const pid_t finished = waitpid(child, &status, WNOHANG);
+        if (finished == child) return status;
+        if (finished < 0) {
+            if (errno == EINTR) continue;
+            throw std::system_error(errno, std::generic_category(), "waitpid");
         }
+
+        siginfo_t info;
+        const int signal = signals.wait(info);
+        if (signal < 0) {
+            if (errno == EINTR) continue;
+            throw std::system_error(errno, std::generic_category(), "sigwaitinfo");
+        }
+        if (signal != SIGCHLD && (!foreground || info.si_code != SI_KERNEL))
+            kill(foreground ? child : -child, signal);
     }
 }
 

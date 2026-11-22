@@ -1,11 +1,11 @@
-{ lib, stdenv }:
+{ lib, pkgsStatic }:
 {
   name,
   source,
   description,
   flags ? [ ],
 }:
-stdenv.mkDerivation {
+pkgsStatic.stdenv.mkDerivation {
   __structuredAttrs = true;
   strictDeps = true;
 
@@ -15,10 +15,9 @@ stdenv.mkDerivation {
   dontUnpack = true;
   dontConfigure = true;
 
-  # A caller may have a different libstdc++ on its LD_LIBRARY_PATH.
   buildPhase = ''
     runHook preBuild
-    "$CXX" -std=c++23 -O2 -Wall -Wextra -static-libstdc++ -static-libgcc \
+    "$CXX" -std=c++23 -O2 -Wall -Wextra -static \
       -I "${./include}" ${lib.escapeShellArgs flags} "$src" \
       -o ${lib.escapeShellArg name}
     runHook postBuild

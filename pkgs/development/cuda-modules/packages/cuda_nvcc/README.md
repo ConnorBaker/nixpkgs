@@ -2,10 +2,10 @@
 
 ## nvcc wrapper
 
-[`nvcc-wrapper.cpp`](./nvcc-wrapper.cpp) is built with stdenv and installed as `bin/nvcc` beside NVIDIA's
+[`nvcc-wrapper.cpp`](./nvcc-wrapper.cpp) is statically linked with musl and installed as `bin/nvcc` beside NVIDIA's
 `bin/.nvcc-wrapped`. It adds the selected host compiler to `PATH` and supplies flags that make intermediate filenames
-and internal symbols reproducible. Both wrappers use the [CUDA tool wrapper library](../../wrapper/README.md)
-to inspect options files, find the installed executable, forward signals, and preserve the wrapped tool's exit status.
+and internal symbols reproducible. It uses the [CUDA tool wrapper library](../../wrapper/README.md) to inspect
+options files, find the installed executable, forward signals, and preserve the wrapped tool's exit status.
 
 ### Why
 
