@@ -12,12 +12,13 @@ const OPERANDS: &[&[u8]] = &[
 ];
 
 use cuda_tool_wrapper::{
-    arguments::{Argument, Arguments, Kind, Quote, expand, scan, tokenize},
+    arguments::{Argument, Arguments, Kind, Quote, tokenize, visit_options},
     files::{GeneratedFile, special_file},
     process::{Tool, exit_status, wrapper_main},
     ptx::{PathPrefixMap, normalize_source_info},
-    scratch::{ScratchDirectory, stable_id},
+    scratch::{ScratchDirectory, StableId},
 };
+use std::collections::HashSet;
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::io;
@@ -46,21 +47,16 @@ const PASS_THROUGH: &[&[u8]] = &[
     b"clean", b"clean-targets",
 ];
 
-fn effective_arguments(args: &[Argument]) -> io::Result<Arguments> {
-    let flags = |name| {
-        tokenize(
-            env::var_os(name).as_deref().unwrap_or_default().as_bytes(),
-            Quote::Preserve,
-        )
-    };
-    let mut effective = flags("NVCC_PREPEND_FLAGS")?;
-    effective.extend_from_slice(args);
-    effective.extend(flags("NVCC_APPEND_FLAGS")?);
-    expand(&effective, classify, Quote::Preserve, 4 * 1024 * 1024)
+fn flags(name: &str) -> io::Result<Arguments> {
+    tokenize(
+        env::var_os(name).as_deref().unwrap_or_default().as_bytes(),
+        Quote::Preserve,
+    )
 }
 
 struct Compilation {
     sources: Arguments,
+    scratch_id: StableId,
     output: Option<PathBuf>,
     output_directory: PathBuf,
     keep: bool,
@@ -69,9 +65,14 @@ struct Compilation {
 }
 
 impl Compilation {
-    fn inspect(args: &[Argument]) -> Option<Self> {
+    fn inspect(args: &[Argument], cwd: &Path) -> Option<Self> {
+        let mut supplied = flags("NVCC_PREPEND_FLAGS").ok()?;
+        supplied.extend_from_slice(args);
+        supplied.extend(flags("NVCC_APPEND_FLAGS").ok()?);
+
         let mut build = Self {
             sources: Vec::new(),
+            scratch_id: StableId::new(cwd),
             output: None,
             output_directory: PathBuf::new(),
             keep: true,
@@ -79,46 +80,53 @@ impl Compilation {
             ptx: false,
         };
         let mut explicit_language = false;
-        let mut inputs = Vec::new();
-        for arg in scan(args, classify) {
-            let arg = arg.ok()?;
-            let name = bare_option(arg.name);
-            if PASS_THROUGH.contains(&name) {
-                return None;
-            }
-            let path = || PathBuf::from(OsStr::from_bytes(arg.value));
-            match name {
-                b"o" | b"output-file" => build.output = Some(path()),
-                b"odir" | b"output-directory" => build.output_directory = path(),
-                b"x" => explicit_language = matches!(arg.value, b"cu" | b"c++" | b"c"),
-                b"keep" | b"keep-dir" | b"save-temps" | b"objdir-as-tempdir" | b"objtemp" => {
-                    build.keep = false
+        let mut bypass = false;
+        visit_options(
+            &supplied,
+            classify,
+            Quote::Preserve,
+            4 * 1024 * 1024,
+            |arg| {
+                for word in arg.words {
+                    build.scratch_id.push(word);
                 }
-                b"frandom-seed" => build.seed = false,
-                b"ptx" => build.ptx = true,
-                b"" if !arg.value.is_empty() && !arg.value.starts_with(b"-") => {
-                    inputs.push(arg.value)
+                let name = bare_option(arg.name);
+                bypass |= PASS_THROUGH.contains(&name);
+                let path = || PathBuf::from(OsStr::from_bytes(arg.value));
+                match name {
+                    b"o" | b"output-file" => build.output = Some(path()),
+                    b"odir" | b"output-directory" => build.output_directory = path(),
+                    b"x" => explicit_language = matches!(arg.value, b"cu" | b"c++" | b"c"),
+                    b"keep" | b"keep-dir" | b"save-temps" | b"objdir-as-tempdir" | b"objtemp" => {
+                        build.keep = false
+                    }
+                    b"frandom-seed" => build.seed = false,
+                    b"ptx" => build.ptx = true,
+                    b"" if !arg.value.is_empty() && !arg.value.starts_with(b"-") => {
+                        build.sources.push(arg.value.to_vec())
+                    }
+                    _ => {}
                 }
-                _ => {}
-            }
+            },
+        )
+        .ok()?;
+        if bypass {
+            return None;
         }
 
-        let mut stems = Vec::new();
         const SOURCE_EXTENSIONS: &[&[u8]] =
             &[b"cu", b"c", b"cc", b"cxx", b"cpp", b"c++", b"C", b"CPP"];
-        for input in inputs {
-            let path = Path::new(OsStr::from_bytes(input));
-            let extension = path.extension().unwrap_or_default().as_bytes();
-            if !explicit_language && !SOURCE_EXTENSIONS.contains(&extension) {
-                continue;
-            }
-            let stem = path.file_stem();
-            if stems.contains(&stem) {
-                build.keep = false;
-            }
-            stems.push(stem);
-            build.sources.push(input.to_vec());
+        if !explicit_language {
+            build.sources.retain(|source| {
+                let path = Path::new(OsStr::from_bytes(source));
+                SOURCE_EXTENSIONS.contains(&path.extension().unwrap_or_default().as_bytes())
+            });
         }
+        let mut stems = HashSet::new();
+        build.keep &= build
+            .sources
+            .iter()
+            .all(|source| stems.insert(Path::new(OsStr::from_bytes(source)).file_stem()));
         // NVCC accepts one seed per invocation and requires distinct seeds
         // for different translation units.
         build.seed &= build.sources.len() == 1;
@@ -168,25 +176,24 @@ fn nvcc_command(tool: &Tool, args: &[Argument]) -> Command {
 fn compile(mut tool: Tool) -> io::Result<i32> {
     tool.use_installed_name();
     let forward = || Ok(tool.exec(nvcc_command(&tool, &tool.args)));
-    let Ok(effective) = effective_arguments(&tool.args) else {
-        return forward();
-    };
-    let Some(build) = Compilation::inspect(&effective) else {
-        return forward();
-    };
     let Ok(cwd) = env::current_dir() else {
+        return forward();
+    };
+    let Some(build) = Compilation::inspect(&tool.args, &cwd) else {
         return forward();
     };
     let mut args = Vec::new();
     if build.seed {
-        args.push(format!("--frandom-seed=nvcc-{}", stable_id(&cwd, &build.sources)).into_bytes());
+        let mut seed = StableId::new(&cwd);
+        seed.push(&build.sources[0]);
+        args.push(format!("--frandom-seed=nvcc-{}", seed.finish()).into_bytes());
     }
     let scratch = if build.keep {
         let tmp = env::var_os("TMPDIR")
             .filter(|tmp| !tmp.is_empty())
             .unwrap_or_else(|| "/tmp".into());
         ScratchDirectory::acquire(
-            PathBuf::from(tmp).join(format!("nvcc-keep-{}", stable_id(&cwd, &effective))),
+            PathBuf::from(tmp).join(format!("nvcc-keep-{}", build.scratch_id.finish())),
         )
     } else {
         None

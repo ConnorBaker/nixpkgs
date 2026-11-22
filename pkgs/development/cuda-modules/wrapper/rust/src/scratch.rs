@@ -1,4 +1,3 @@
-use crate::arguments::Argument;
 use crate::files::{descriptor_path, same_file};
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io;
@@ -6,15 +5,25 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
-pub fn stable_id(cwd: &Path, args: &[Argument]) -> String {
-    // FNV-1a with NUL separators, matching the C++ wrapper.
-    let mut hash = 14695981039346656037u64;
-    for part in std::iter::once(cwd.as_os_str().as_bytes()).chain(args.iter().map(Vec::as_slice)) {
-        for byte in part.iter().copied().chain([0]) {
-            hash = (hash ^ u64::from(byte)).wrapping_mul(1099511628211);
+// FNV-1a with NUL separators, matching the C++ wrapper.
+pub struct StableId(u64);
+
+impl StableId {
+    pub fn new(cwd: &Path) -> Self {
+        let mut id = Self(14695981039346656037);
+        id.push(cwd.as_os_str().as_bytes());
+        id
+    }
+
+    pub fn push(&mut self, bytes: &[u8]) {
+        for byte in bytes.iter().copied().chain([0]) {
+            self.0 = (self.0 ^ u64::from(byte)).wrapping_mul(1099511628211);
         }
     }
-    format!("{hash:016x}")
+
+    pub fn finish(&self) -> String {
+        format!("{:016x}", self.0)
+    }
 }
 
 pub struct ScratchDirectory {

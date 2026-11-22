@@ -74,41 +74,45 @@ pub struct OptionArg<'a> {
     pub name: &'a [u8],
     pub value: &'a [u8],
     pub kind: Kind,
-    words: &'a [Argument],
+    pub words: &'a [Argument],
 }
 
-pub fn scan(
-    mut words: &[Argument],
-    classify: Classify,
-) -> impl Iterator<Item = io::Result<OptionArg<'_>>> {
-    std::iter::from_fn(move || {
-        let word = words.first()?.as_slice();
-        let (name, inline) = match word.iter().position(|&byte| byte == b'=') {
-            Some(i) => (&word[..i], Some(&word[i + 1..])),
-            None => (word, None),
-        };
-        let kind = classify(name);
-        let (value, count) = match (kind, inline) {
-            (Kind::Plain, _) => (word, 1),
-            (_, Some(value)) => (value, 1),
-            (_, None) if words.len() > 1 => (words[1].as_slice(), 2),
-            _ => {
-                words = &[];
-                return Some(Err(io::Error::other(format!(
-                    "{} is missing its value",
-                    OsStr::from_bytes(name).to_string_lossy()
-                ))));
-            }
-        };
-        let (original, rest) = words.split_at(count);
-        words = rest;
-        Some(Ok(OptionArg {
-            name,
-            value,
-            kind,
-            words: original,
-        }))
-    })
+impl OptionArg<'_> {
+    fn with_value(&self, value: Argument) -> Argument {
+        if self.kind != Kind::Plain && self.words.len() == 1 {
+            [self.name, b"=", &value].concat()
+        } else {
+            value
+        }
+    }
+}
+
+fn next_arg(words: &[Argument], classify: Classify) -> io::Result<Option<OptionArg<'_>>> {
+    let Some(word) = words.first().map(Vec::as_slice) else {
+        return Ok(None);
+    };
+    let (name, inline) = match word.iter().position(|&byte| byte == b'=') {
+        Some(i) => (&word[..i], Some(&word[i + 1..])),
+        None => (word, None),
+    };
+    let kind = classify(name);
+    let (value, count) = match (kind, inline) {
+        (Kind::Plain, _) => (word, 1),
+        (_, Some(value)) => (value, 1),
+        (_, None) if words.len() > 1 => (words[1].as_slice(), 2),
+        _ => {
+            return Err(io::Error::other(format!(
+                "{} is missing its value",
+                OsStr::from_bytes(name).to_string_lossy()
+            )));
+        }
+    };
+    Ok(Some(OptionArg {
+        name,
+        value,
+        kind,
+        words: &words[..count],
+    }))
 }
 
 fn check_depth(depth: u8) -> io::Result<()> {
@@ -131,13 +135,13 @@ struct Options {
 impl Options {
     fn visit(
         &mut self,
-        args: &[Argument],
+        mut args: &[Argument],
         depth: u8,
         visit: &mut impl FnMut(OptionArg<'_>),
     ) -> io::Result<()> {
         check_depth(depth)?;
-        for arg in scan(args, self.classify) {
-            let arg = arg?;
+        while let Some(arg) = next_arg(args, self.classify)? {
+            args = &args[arg.words.len()..];
             if arg.kind == Kind::OptionsFile {
                 for path in arg.value.split(|&b| b == b',').filter(|p| !p.is_empty()) {
                     let nested = read_options(path, self.quotes, &mut self.remaining)?;
@@ -151,31 +155,25 @@ impl Options {
     }
 }
 
-pub fn expand(
+pub fn visit_options(
     args: &[Argument],
     classify: Classify,
     quotes: Quote,
     remaining: usize,
-) -> io::Result<Arguments> {
-    let mut output = Vec::new();
+    mut visit: impl FnMut(OptionArg<'_>),
+) -> io::Result<()> {
     Options {
         classify,
         quotes,
         remaining,
     }
-    .visit(args, 0, &mut |arg| output.extend_from_slice(arg.words))?;
-    Ok(output)
+    .visit(args, 0, &mut visit)
 }
 
 pub fn last_output(args: &[Argument], classify: Classify) -> io::Result<Option<PathBuf>> {
     let mut output = None;
     let mut query = false;
-    Options {
-        classify,
-        quotes: Quote::Discard,
-        remaining: usize::MAX,
-    }
-    .visit(args, 0, &mut |arg| {
+    visit_options(args, classify, Quote::Discard, usize::MAX, |arg| {
         query |= informational(arg.name);
         if matches!(arg.name, b"-o" | b"--output-file") {
             output = Some(PathBuf::from(OsStr::from_bytes(arg.value)));
@@ -216,37 +214,27 @@ struct Rewriter<F> {
     files: InputFiles,
 }
 
-impl<F: FnMut(OptionArg<'_>, &mut InputFiles) -> RewriteInput> Rewriter<F> {
+impl<F: FnMut(&OptionArg<'_>, &mut InputFiles) -> RewriteInput> Rewriter<F> {
     // Keep rewritten options in files. Moving them to argv would introduce
     // the kernel's argument size limit and could change option precedence.
-    fn list(&mut self, args: &[Argument], depth: u8) -> RewriteResult<Option<Arguments>> {
+    fn list(&mut self, mut args: &mut [Argument], depth: u8) -> RewriteResult<bool> {
         check_depth(depth).map_err(|_| RewriteError::Inspect)?;
-        let mut output = Vec::new();
         let mut changed = false;
-        for arg in scan(args, self.classify) {
-            let arg = arg.map_err(|_| RewriteError::Inspect)?;
-            let words = arg.words;
-            let name = arg.name;
-            let inline = arg.kind != Kind::Plain && words.len() == 1;
+        while let Some(arg) = next_arg(args, self.classify).map_err(|_| RewriteError::Inspect)? {
+            let count = arg.words.len();
             let replacement = if arg.kind == Kind::OptionsFile {
                 self.file_list(arg.value, depth + 1)?
             } else {
-                (self.rewrite)(arg, &mut self.files).map_err(RewriteError::Input)?
+                (self.rewrite)(&arg, &mut self.files).map_err(RewriteError::Input)?
             };
             // Escaped double quotes do not survive these options files.
             if let Some(replacement) = replacement.filter(|r| depth == 0 || !r.contains(&b'"')) {
-                output.extend_from_slice(&words[..words.len() - 1]);
-                output.push(if inline {
-                    [name, b"=", &replacement].concat()
-                } else {
-                    replacement
-                });
+                args[count - 1] = arg.with_value(replacement);
                 changed = true;
-            } else {
-                output.extend_from_slice(words);
             }
+            args = &mut args[count..];
         }
-        Ok(changed.then_some(output))
+        Ok(changed)
     }
 
     fn file_list(&mut self, value: &[u8], depth: u8) -> RewriteResult<Option<Argument>> {
@@ -259,11 +247,11 @@ impl<F: FnMut(OptionArg<'_>, &mut InputFiles) -> RewriteInput> Rewriter<F> {
             if path.is_empty() {
                 continue;
             }
-            let args = read_options(path, Quote::Discard, &mut self.remaining)
+            let mut args = read_options(path, Quote::Discard, &mut self.remaining)
                 .map_err(|_| RewriteError::Inspect)?;
-            if let Some(rewritten) = self.list(&args, depth)? {
+            if self.list(&mut args, depth)? {
                 let mut text = Vec::new();
-                for word in rewritten {
+                for word in args {
                     push_quoted(&mut text, &word);
                     text.push(b'\n');
                 }
@@ -281,7 +269,7 @@ impl<F: FnMut(OptionArg<'_>, &mut InputFiles) -> RewriteInput> Rewriter<F> {
 pub fn rewrite_options(
     args: &[Argument],
     classify: Classify,
-    rewrite: impl FnMut(OptionArg<'_>, &mut InputFiles) -> RewriteInput,
+    rewrite: impl FnMut(&OptionArg<'_>, &mut InputFiles) -> RewriteInput,
 ) -> io::Result<Option<RewrittenArgs>> {
     let mut rewriter = Rewriter {
         classify,
@@ -289,12 +277,13 @@ pub fn rewrite_options(
         remaining: usize::MAX,
         files: InputFiles::default(),
     };
-    match rewriter.list(args, 0) {
-        Ok(Some(args)) => Ok(Some(RewrittenArgs {
+    let mut args = args.to_vec();
+    match rewriter.list(&mut args, 0) {
+        Ok(true) => Ok(Some(RewrittenArgs {
             args,
             _files: rewriter.files,
         })),
-        Ok(None) | Err(RewriteError::Inspect) => Ok(None),
+        Ok(false) | Err(RewriteError::Inspect) => Ok(None),
         Err(RewriteError::Input(error)) => Err(error),
     }
 }
