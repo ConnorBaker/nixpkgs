@@ -38,6 +38,10 @@ class FileDescriptor {
     int fd_;
 };
 
+inline std::string descriptorPath(const FileDescriptor &fd) {
+    return "/proc/self/fd/" + std::to_string(fd.get());
+}
+
 inline void checkFileRange(std::uint64_t size, std::uint64_t offset, std::uint64_t count) {
     if (offset > size || count > size - offset) throw std::runtime_error("byte range exceeds the artifact");
 }

@@ -1,5 +1,91 @@
 # cuda_nvcc
 
+## nvcc wrapper
+
+[`nvcc-wrapper.cpp`](./nvcc-wrapper.cpp) is built with stdenv and installed as `bin/nvcc` beside NVIDIA's
+`bin/.nvcc-wrapped`. It adds the selected host compiler to `PATH` and supplies flags that make intermediate filenames
+and internal symbols reproducible. Both wrappers use the [CUDA tool wrapper library](../../wrapper/README.md)
+to inspect options files, find the installed executable, forward signals, and preserve the wrapped tool's exit status.
+
+### Why
+
+Without these options, nvcc writes a different object each time it compiles the same source file. There are two
+causes.
+
+The first cause is the names of the intermediate files. nvcc names them after its process ID, for example
+`tmpxft_<pid>_<n>-<m>_<source>.cudafe1.cpp`, and the host compiler compiles the host code from them. The host compiler
+stores the file name in the symbol table of the object, as the `STT_FILE` symbol. It also names the function that runs
+the static initializers after the file: `_GLOBAL__sub_I_tmpxft_<pid>_...`. `strip -S` removes the `STT_FILE` symbol,
+but it does not remove the name of that function.
+
+The second cause is the names of entities with internal linkage, for example functions in an unnamed namespace. nvcc
+gives every source file an identifier and puts it into these names: `_INTERNAL_<identifier>...` and
+`_GLOBAL__N__<identifier>`. The names are used in the host code and in the device code. The identifier is the same in
+every build if the source file defines a function or a variable that has external linkage and is not a template. If
+the source file defines no such function or variable, the identifier contains the process ID. Source files that define
+only templates are an example, and some of the CUDA modules of OpenCV contain such files.
+
+nvcc has one option for each cause:
+
+- `--keep` tells nvcc not to remove its intermediate files. nvcc then names them after the source file:
+  `<source>.cudafe1.cpp`.
+- `--frandom-seed` tells nvcc to derive the identifier from a seed. nvcc has this option from CUDA 12.9. nvcc also
+  passes the seed to the host compiler as `-frandom-seed`. NVIDIA requires a different seed for every source file of a
+  program.
+
+These options cannot be set once for a whole build, for example through `NVCC_PREPEND_FLAGS` in `setupCudaHook`:
+
+- `--keep` needs a directory for the intermediate files (`--keep-dir`). With one directory for the whole build, two
+  source files that have the same name and are compiled at the same time would overwrite each other's files.
+- The seed would be the same for every source file.
+
+`--objdir-as-tempdir` looks like an alternative to `--keep`, because it names the intermediate files after the object
+and needs no directory. It has two problems:
+
+- It has no effect without `-c`. The object is then an intermediate file itself, and nvcc names it after the process
+  ID.
+- nvcc fails if the directory of the object is not writable, for example with `-o /dev/null`.
+
+### How
+
+The wrapper inspects the command line, `NVCC_PREPEND_FLAGS`, `NVCC_APPEND_FLAGS` and regular options files (`-optf`).
+It forwards them intact and skips non-compilation invocations such as `--version`, `--dryrun`, and preprocessing.
+For compilations it can add:
+
+- `--frandom-seed` from CUDA 12.9 for a single source file. The value is derived from the working directory and source
+  argument. NVIDIA requires different seeds for different translation units, and one invocation can take only one seed.
+- `--keep --keep-dir=$TMPDIR/nvcc-keep-<id>` (using `/tmp` if `TMPDIR` is unset). The directory name hashes the
+  working directory and effective arguments, since the path can appear in debug information. Identical invocations
+  serialize access to this directory. After the compiler exits, the wrapper removes the directory if it can
+  reacquire the lock. If the directory remains, the next invocation waits for the lock and clears the old
+  intermediates.
+
+An explicit seed suppresses the automatic seed. `--keep`, `--keep-dir`, `--save-temps`, and `--objdir-as-tempdir`
+(`-objtemp`) suppress automatic intermediate-file options. CMake uses the kept intermediates to identify the
+compiler. Duplicate source stems also suppress those options because nvcc can overwrite one source's intermediates
+with another's. If the wrapper cannot inspect an options file, it forwards the invocation directly. If it cannot
+acquire a scratch directory, it can still supply the seed.
+
+With a scratch directory, the wrapper waits for nvcc and cleans up before returning its exit status or terminating
+with the same signal. For other invocations it directly executes nvcc. The real compiler sees the absolute public
+`nvcc` path so toolkit discovery works through symlinks and CMake recognizes its version output.
+
+CUDA before 12.9 can still put PIDs in internal symbol names. The same limitation can affect compilations of
+multiple source files in one invocation. The checkout and build directory, debug metadata, and the remaining
+compiler inputs can still affect the output.
+
+### Testing
+
+- `cudaPackages.cuda_nvcc.tests.nvcc-reproducible` compiles sources twice and compares the results. It also checks
+  that `bin/.nvcc-wrapped` without the wrapper still writes different objects. That check fails when a CUDA release no
+  longer needs the options.
+- `cudaPackages.cuda_nvcc.tests.nvcc-wrapper` checks caller-supplied options and compiles through an external symlink.
+- `cudaPackages.cuda_nvcc.tests.nvcc-process` uses a stand-in compiler to check concurrent invocations, signal
+  forwarding, and scratch directory recovery after `SIGKILL`.
+
+To check a package, build it twice and compare the outputs, for example with `nix-build --check`. A small test source
+can be reproducible where a package is not, so check the package itself.
+
 ## nvlink wrapper
 
 `bin/nvlink` is a wrapper around NVIDIA's nvlink, which is installed as `bin/.nvlink-wrapped`. The wrapper is built

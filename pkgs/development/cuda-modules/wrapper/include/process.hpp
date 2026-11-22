@@ -20,6 +20,11 @@
 
 namespace cudaWrapper {
 
+inline std::string_view environment(const char *name) {
+    if (const char *value = std::getenv(name)) return value;
+    return {};
+}
+
 // Resolve the actual installed path, including when invoked through a symlink.
 inline std::filesystem::path executable() {
     std::error_code error;
@@ -41,7 +46,7 @@ inline int exec(const std::string &program, char *const argv[], std::string_view
 }
 
 // Runs the wrapped program with argv and returns its wait status.
-inline int run(const std::string &program, char *const argv[], std::string_view wrapper) {
+inline int run(const std::string &program, char *const argv[], std::string_view wrapper, int inheritedFd = -1) {
     // An ignored SIGCHLD, which is inherited, would let the kernel reap the program without telling the wrapper.
     static_cast<void>(std::signal(SIGCHLD, SIG_DFL));
     // Receive the signals to forward, and SIGCHLD, synchronously rather than in a handler.
@@ -62,6 +67,11 @@ inline int run(const std::string &program, char *const argv[], std::string_view 
         // Don't outlive the wrapper.
         if (prctl(PR_SET_PDEATHSIG, SIGKILL) != 0 || getppid() != parent) _exit(127);
         if (!foreground && setpgid(0, 0) != 0) _exit(127);
+        // Preserve the caller's standard descriptors even if the lease used a closed one.
+        if (inheritedFd >= 0 && fcntl(inheritedFd, F_DUPFD, STDERR_FILENO + 1) < 0) {
+            std::cerr << wrapper << " wrapper: error: cannot inherit descriptor: " << std::strerror(errno) << '\n';
+            _exit(127);
+        }
         sigprocmask(SIG_SETMASK, &original, nullptr);
         _exit(exec(program, argv, wrapper));
     }
@@ -101,11 +111,21 @@ class Tool {
   public:
     explicit Tool(std::string name) : name_(std::move(name)) {
         const auto bin = executable().parent_path();
+        public_ = bin / name_;
         wrapped_ = bin / ("." + name_ + "-wrapped");
     }
 
     // Forward argv[0] verbatim when the vendor tool records the invocation name.
     int run(char *const argv[]) const { return cudaWrapper::run(wrapped_, argv, name_); }
+    int exec(char *const argv[]) const { return cudaWrapper::exec(wrapped_, argv, name_); }
+    int exec(std::span<const std::string> args, const char *argv0) const { return exec(command(args, argv0).data()); }
+
+    // Use the installed public path for tools which locate their profile via argv[0].
+    int run(std::span<const std::string> args, int inheritedFd = -1) const {
+        return cudaWrapper::run(wrapped_, command(args, public_.c_str()).data(), name_, inheritedFd);
+    }
+    int exec(std::span<const std::string> args) const { return exec(args, public_.c_str()); }
+
     template <typename Edit> int editOutput(char *const argv[], std::string path, Edit update) const {
         GeneratedFile output(std::move(path));
         const int status = exitStatus(run(argv));
@@ -114,7 +134,17 @@ class Tool {
     }
 
   private:
+    static std::vector<char *> command(const std::span<const std::string> &args, const char *argv0) {
+        std::vector<char *> command;
+        command.reserve(args.size() + 2);
+        command.push_back(const_cast<char *>(argv0));
+        for (const auto &arg : args) command.push_back(const_cast<char *>(arg.c_str()));
+        command.push_back(nullptr);
+        return command;
+    }
+
     std::string name_;
+    std::string public_;
     std::string wrapped_;
 };
 
