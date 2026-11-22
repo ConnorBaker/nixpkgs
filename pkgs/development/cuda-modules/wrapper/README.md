@@ -60,6 +60,8 @@ The library is compiled into each adapter.
 - [`elf.hpp`](./include/elf.hpp) edits named sections of 64-bit little-endian ELF files in place.
   [`nix-store.hpp`](./include/nix-store.hpp) replaces hashes at fixed width. Use these on metadata that has been verified
   to carry incidental references. For example, `nvlink` applies the hash transform to `.note.nv.tkinfo`.
+- [`archive.hpp`](./include/archive.hpp) normalizes regular `ar` member timestamps in place, preserving member data and
+  symbol offsets.
 - [`ptx.hpp`](./include/ptx.hpp) rewrites source records in PTX and can pass the new input to the vendor through an
   anonymous file descriptor. [`path-prefix-map.hpp`](./include/path-prefix-map.hpp) parses and applies
   `BUILD_PATH_PREFIX_MAP`.
@@ -72,6 +74,7 @@ The library is compiled into each adapter.
 | `nvlink` | Clears Nix store hashes in the cubin's toolkit-info note, including inherited notes. [Linker wrapper](../packages/cuda_nvcc/README.md#nvlink-wrapper) |
 | `ptxas` | Supplies stable source timestamps for CUDA 12.6 through 13.3 and remaps PTX `.file` paths when requested. [Assembler wrapper](../packages/cuda_nvcc/README.md#ptxas-and-fatbinary-wrappers) |
 | `fatbinary` | Remaps matching image identifiers and the source paths in embedded PTX when requested. [Fat binary wrapper](../packages/cuda_nvcc/README.md#ptxas-and-fatbinary-wrappers) |
+| `nvprune` | Normalizes archive member and symbol table timestamps to zero. Standalone object outputs retain their contents. [Package](../packages/cuda_nvprune/package.nix) |
 | `tileiras` | The existing package wrapper defaults `CUDA_ROOT` for toolkit discovery. When it resolves `ptxas` through `cuda_nvcc`, the assembler remaps source paths for the Tile IR compilation. [Package](../packages/cuda_tileiras.nix) |
 | `cudafe++`, `cicc`, `bin2c` | Internal frontend and embedding stages can carry paths from their inputs. The public tool wrappers handle PTX source directives, fat binary identifiers, and toolkit notes at the relevant output boundaries. |
 | `__nvcc_device_query` | `nvcc -arch=native` uses this helper to choose code generation targets from the host's GPUs. Use explicit architectures for hardware-independent builds. |
