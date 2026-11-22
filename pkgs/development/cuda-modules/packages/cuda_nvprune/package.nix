@@ -11,7 +11,7 @@ buildRedist (finalAttrs: {
   outputs = [ "out" ];
 
   postInstall = lib.optionalString finalAttrs.finalPackage.meta.available ''
-    nixLog "wrapping nvprune to normalize archive member timestamps"
+    nixLog "wrapping nvprune to normalize archive member timestamps and ownership"
     mv --verbose "''${!outputBin:?}/bin/nvprune" "''${!outputBin:?}/bin/.nvprune-wrapped"
     install --mode=0755 "${finalAttrs.passthru.nvpruneWrapper}/bin/nvprune-wrapper" "''${!outputBin:?}/bin/nvprune"
   '';

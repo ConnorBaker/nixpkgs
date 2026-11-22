@@ -1,6 +1,6 @@
 use cuda_tool_wrapper::{
     arguments::{classify, last_output},
-    artifact::normalize_archive_dates,
+    artifact::normalize_archive_metadata,
     files::special_file,
     process::wrapper_main,
 };
@@ -21,7 +21,7 @@ fn main() -> ExitCode {
         if let Ok(Some(path)) = last_output(&tool.args, |name| classify(name, OPERANDS))
             && !special_file(&path)
         {
-            return tool.edit_output(command, path, normalize_archive_dates);
+            return tool.edit_output(command, path, normalize_archive_metadata);
         }
         Ok(tool.exec(command))
     })

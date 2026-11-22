@@ -94,7 +94,7 @@ can be reproducible where a package is not, so check the package itself.
 
 `bin/nvlink` is a wrapper around NVIDIA's nvlink, which is installed as `bin/.nvlink-wrapped`. The wrapper is built
 from [`nvlink-wrapper.rs`](../../wrapper/rust/src/bin/nvlink-wrapper.rs) by [`nvlink-wrapper.nix`](./nvlink-wrapper.nix)
-(`passthru.nvlinkWrapper`) with the ordinary stdenv, once for every CUDA release, and copied into `cuda_nvcc`.
+(`passthru.nvlinkWrapper`). The recipe links the wrapper statically with musl and the package copies it into `cuda_nvcc`.
 
 ### Why
 

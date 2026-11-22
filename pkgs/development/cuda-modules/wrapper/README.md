@@ -56,7 +56,7 @@ its own runtime.
 - [`files`](./rust/src/files.rs) provides anonymous inputs and bounded access to artifact bytes. `GeneratedFile`
   checks that the vendor rewrote the intended file. `Artifact::Bytes` gives in-process compiler and linker
   results the same interface.
-- [`artifact`](./rust/src/artifact.rs) edits named ELF64 sections and normalizes regular `ar` member timestamps
+- [`artifact`](./rust/src/artifact.rs) edits named ELF64 sections and normalizes regular `ar` member timestamps and ownership
   while preserving offsets. Apply `blank_store_hashes` to metadata verified to carry incidental references.
   For example, `nvlink` applies it to `.note.nv.tkinfo`.
 - [`ptx`](./rust/src/ptx.rs) rewrites source records in PTX and parses `BUILD_PATH_PREFIX_MAP`.
@@ -69,7 +69,7 @@ its own runtime.
 | `nvlink` | Clears Nix store hashes in the cubin's toolkit-info note, including inherited notes. [Linker wrapper](../packages/cuda_nvcc/README.md#nvlink-wrapper) |
 | `ptxas` | Supplies stable source timestamps for CUDA 12.6 through 13.3 and remaps PTX `.file` paths when requested. [Assembler wrapper](../packages/cuda_nvcc/README.md#ptxas-and-fatbinary-wrappers) |
 | `fatbinary` | Remaps matching image identifiers and the source paths in embedded PTX when requested. [Fat binary wrapper](../packages/cuda_nvcc/README.md#ptxas-and-fatbinary-wrappers) |
-| `nvprune` | Normalizes archive member and symbol table timestamps to zero. Standalone object outputs retain their contents. [Package](../packages/cuda_nvprune/package.nix) |
+| `nvprune` | Zeros archive member and symbol table timestamps, user IDs, and group IDs. Standalone object outputs retain their contents. [Package](../packages/cuda_nvprune/package.nix) |
 | `tileiras` | The existing package wrapper defaults `CUDA_ROOT` for toolkit discovery. When it resolves `ptxas` through `cuda_nvcc`, the assembler remaps source paths for the Tile IR compilation. [Package](../packages/cuda_tileiras.nix) |
 | `cudafe++`, `cicc`, `bin2c` | Internal frontend and embedding stages can carry paths from their inputs. The public tool wrappers handle PTX source directives, fat binary identifiers, and toolkit notes at the relevant output boundaries. |
 | `__nvcc_device_query` | `nvcc -arch=native` uses this helper to choose code generation targets from the host's GPUs. Use explicit architectures for hardware-independent builds. |

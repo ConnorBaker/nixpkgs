@@ -90,10 +90,12 @@ fn little_endian(bytes: &[u8]) -> u64 {
     u64::from_le_bytes(word)
 }
 
-pub fn normalize_archive_dates(output: &mut Artifact<'_>) -> io::Result<()> {
+pub fn normalize_archive_metadata(output: &mut Artifact<'_>) -> io::Result<()> {
     const MAGIC: &[u8] = b"!<arch>\n";
     const HEADER_SIZE: u64 = 60;
-    const DATE: &[u8; 12] = b"0           ";
+    const METADATA_OFFSET: u64 = 16;
+    // The date, UID, and GID fields are adjacent.
+    const METADATA: &[u8; 24] = b"0           0     0     ";
     let mut offset = MAGIC.len() as u64;
     if output.size() < offset || output.read(0, offset)? != MAGIC {
         return Ok(());
@@ -105,20 +107,22 @@ pub fn normalize_archive_dates(output: &mut Artifact<'_>) -> io::Result<()> {
         if &header[58..60] != b"`\n" {
             return Err(malformed());
         }
-        let field = header[48..58].trim_ascii_end();
-        let size = std::str::from_utf8(field)
+        let size = std::str::from_utf8(&header[48..58])
             .ok()
-            .filter(|_| field.iter().all(u8::is_ascii_digit))
+            .map(|field| field.trim_end_matches(' '))
+            .filter(|field| field.as_bytes().iter().all(u8::is_ascii_digit))
             .and_then(|size| size.parse::<u64>().ok())
             .ok_or_else(malformed)?;
         let available = output.size() - offset - HEADER_SIZE;
         if size > available || size % 2 > available - size {
             return Err(malformed());
         }
-        let old_date = &header[16..28];
-        let blank_names_date = header.starts_with(b"//") && old_date.iter().all(|&b| b == b' ');
-        if old_date != DATE && !blank_names_date {
-            output.write(offset + 16, DATE)?;
+        let old_metadata = &header[METADATA_OFFSET as usize..][..METADATA.len()];
+        // The GNU long-name table can have blank date and ownership fields.
+        let blank_names_metadata =
+            header.starts_with(b"//") && old_metadata.iter().all(|&b| b == b' ');
+        if old_metadata != METADATA && !blank_names_metadata {
+            output.write(offset + METADATA_OFFSET, METADATA)?;
         }
         offset += HEADER_SIZE + size + size % 2;
     }
