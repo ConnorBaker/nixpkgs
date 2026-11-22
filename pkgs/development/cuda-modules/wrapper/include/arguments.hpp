@@ -59,6 +59,10 @@ struct Option {
         if (index + 1 == args.size()) throw OptionsError(std::string(name) + " is missing its value");
         return args[++index];
     }
+
+    std::string withValue(std::string replacement) const {
+        return inlineValue ? std::string(name) + '=' + replacement : std::move(replacement);
+    }
 };
 
 enum class OptionKind { plain, operand, optionsFiles };
@@ -128,6 +132,71 @@ std::optional<std::string> lastOutput(std::span<const std::string> args, Classif
         if (isOutputOption(option.name)) output = value;
     });
     return informational ? std::nullopt : output;
+}
+
+struct RewrittenArguments {
+    Arguments args;
+    std::vector<FileDescriptor> files;
+
+    std::string addFile(FileDescriptor fd) {
+        files.push_back(std::move(fd));
+        return descriptorPath(files.back());
+    }
+};
+
+inline std::string encodeOptions(std::span<const std::string> args) {
+    std::string text;
+    for (const auto &arg : args) {
+        text += '"';
+        for (const char c : arg) {
+            if (c == '\\' || c == '"') text += '\\';
+            text += c;
+        }
+        text += "\"\n";
+    }
+    return text;
+}
+
+// Keep each options file at its original position in the command, replacing
+// only the files whose arguments changed. Flattening them into argv would
+// impose the kernel's argument size limits on the caller.
+template <typename Classify, typename Rewrite>
+std::optional<RewrittenArguments> rewriteOptions(Arguments args, Classify classify, Rewrite rewrite) {
+    RewrittenArguments result{std::move(args), {}};
+    auto byteLimit = std::numeric_limits<std::size_t>::max();
+    const auto rewriteList = [&](auto &recurse, Arguments &input, unsigned depth) -> bool {
+        checkOptionsDepth(depth);
+        bool changed = false;
+        visitArguments(input, classify, [&](const Option &option, OptionKind kind, std::string_view value, auto,
+                                            std::size_t end) {
+            std::optional<std::string> replacement;
+            if (kind == OptionKind::optionsFiles) {
+                std::string paths;
+                bool changedFile = false;
+                for (const auto part : std::views::split(value, ',')) {
+                    if (part.begin() != value.begin()) paths += ',';
+                    if (part.empty()) continue;
+                    std::string path(part.begin(), part.end());
+                    auto nested = readArguments(path, EscapedQuote::discard, byteLimit);
+                    if (recurse(recurse, nested, depth + 1)) {
+                        path = result.addFile(anonymousInput("cuda-options", encodeOptions(nested)));
+                        changedFile = true;
+                    }
+                    paths += path;
+                }
+                if (changedFile) replacement = std::move(paths);
+            } else {
+                replacement = rewrite(option.name, kind, value, result);
+            }
+            // These tools discard escaped double quotes in options files.
+            if (!replacement || (depth != 0 && replacement->contains('"'))) return;
+            input[end] = kind == OptionKind::plain ? std::move(*replacement) : option.withValue(std::move(*replacement));
+            changed = true;
+        });
+        return changed;
+    };
+    if (rewriteList(rewriteList, result.args, 0)) return result;
+    return std::nullopt;
 }
 
 } // namespace cudaWrapper

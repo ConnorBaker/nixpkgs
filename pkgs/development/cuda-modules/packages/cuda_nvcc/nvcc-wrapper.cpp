@@ -1,6 +1,7 @@
 // Pass reproducibility options to NVIDIA's nvcc. See README.md.
 #include "arguments.hpp"
 #include "process.hpp"
+#include "ptx.hpp"
 #include "scratch.hpp"
 
 #include <algorithm>
@@ -39,8 +40,23 @@ bool takesOperand(std::string_view name) {
 
 struct Compilation {
     Arguments sources;
+    std::optional<std::string> output;
+    fs::path outputDirectory;
     bool keep = true;
     bool seed = NVCC_HAS_RANDOM_SEED;
+    bool ptx = false;
+
+    Arguments ptxPaths() const {
+        if (output) return {*output};
+        Arguments paths;
+        for (const auto &source : sources) {
+            auto name = fs::path(source).filename();
+            name.replace_extension(".ptx");
+            auto path = (outputDirectory / name).native();
+            if (!std::ranges::contains(paths, path)) paths.push_back(std::move(path));
+        }
+        return paths;
+    }
 };
 
 std::optional<Compilation> inspect(const Arguments &args) {
@@ -59,7 +75,12 @@ std::optional<Compilation> inspect(const Arguments &args) {
             name == "objdir-as-tempdir" || name == "objtemp")
             build.keep = false;
         if (name == "frandom-seed") build.seed = false;
-        if (name == "x") {
+        if (name == "ptx") build.ptx = true;
+        if (name == "o" || name == "output-file") {
+            build.output = option.value(args, i);
+        } else if (name == "odir" || name == "output-directory") {
+            build.outputDirectory = option.value(args, i);
+        } else if (name == "x") {
             const auto lang = option.value(args, i);
             explicitLanguage = lang == "cu" || lang == "c++" || lang == "c";
         } else if (!option.inlineValue && takesOperand(name)) {
@@ -132,10 +153,24 @@ int compile(const cudaWrapper::Tool &tool, const Arguments &args) {
     }
 
     command.insert(command.end(), args.begin(), args.end());
-    if (!scratch || !*scratch) return tool.exec(command);
-    const int status = tool.run(command, scratch->descriptor());
+    const cudaWrapper::PathPrefixMap paths(build->ptx ? environment("BUILD_PATH_PREFIX_MAP") : "");
+    std::vector<cudaWrapper::GeneratedFile> ptxOutputs;
+    if (!paths.empty()) {
+        for (auto &path : build->ptxPaths()) {
+            if (path != "-" && path != "/dev/stdout" && !cudaWrapper::isSpecialFile(path))
+                ptxOutputs.emplace_back(std::move(path));
+        }
+    }
+
+    if ((!scratch || !*scratch) && ptxOutputs.empty()) return tool.exec(command);
+    const int status = tool.run(command, scratch ? scratch->descriptor() : -1);
     scratch.reset();
-    return cudaWrapper::exitStatus(status);
+    const int result = cudaWrapper::exitStatus(status);
+    if (result == 0) {
+        for (auto &output : ptxOutputs)
+            output.rewriteText("nvcc", [&](std::string_view ptx) { return cudaWrapper::normalizePtxSourceInfo(ptx, paths); });
+    }
+    return result;
 }
 
 } // namespace

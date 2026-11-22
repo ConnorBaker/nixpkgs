@@ -9,14 +9,18 @@ The library is compiled into each adapter.
 
 - The wrapper resolves its own installed path through `/proc/self/exe` and launches the vendor executable
   `.<tool>-wrapped` beside it. `nvcc` uses its installed public path as `argv[0]` to find its toolkit profile.
+- Input adapters preserve argument order and explicit settings within each tool's policy. For `ptxas` and
+  `fatbinary`, a changed options file is replayed at the same position through an anonymous file descriptor.
+  Nested files retain their boundaries, and large operands stay in files. If either adapter cannot inspect
+  the options files, it invokes the vendor with the caller's arguments.
 - When an adapter needs to wait, the vendor's error exit or termination signal takes precedence over artifact edits.
   In a background build the wrapper forwards catchable cancellation signals to the vendor's process group.
   In the foreground, terminal signals reach the shared group directly. The wrapper forwards signals sent to its
   own PID to the immediate tool. After `SIGKILL`, a later `nvcc` invocation can recover its scratch directory
   once any subprocesses holding the lock exit.
-- Output adapters honor the last explicit `-o` or `--output-file`, including options files. Binary
-  metadata edits run after the vendor succeeds and preserve the artifact's size. Informational calls such as
-  `--version` skip editing.
+- Output adapters honor the last explicit `-o` or `--output-file`, including options files. The standalone PTX
+  adapter also recognizes `nvcc`'s default output names. Edits run after the vendor succeeds, and informational calls
+  such as `--version` skip editing. Binary metadata edits are fixed-width. Standalone PTX can change size.
   Callers must keep options files stable for the duration of a call and give independent builds separate outputs.
 
 ## Adding a wrapper
@@ -40,8 +44,9 @@ The library is compiled into each adapter.
 
 ## Library interfaces
 
-- [`arguments.hpp`](./include/arguments.hpp) scans options and their operands and locates a generated output.
-  The adapter supplies the tool's option table.
+- [`arguments.hpp`](./include/arguments.hpp) scans options and their operands, locates a generated output, or replaces
+  selected operands. The adapter supplies the tool's option table. With `ptxas` and `fatbinary`, options files
+  discard escaped double quotes, so an operand rewrite requiring a literal double quote in an options file is skipped.
 - [`process.hpp`](./include/process.hpp) provides `Tool::exec` when the adapter can hand off to the vendor executable and
   `Tool::run` when it needs to wait, clean up, or edit the result. `run` forwards signals and returns a wait status.
   Call `exitStatus` after cleanup to propagate the exit code or termination signal. `Tool::editOutput`
@@ -49,16 +54,79 @@ The library is compiled into each adapter.
 - [`scratch.hpp`](./include/scratch.hpp) provides stable identifiers and locked scratch directories for tools whose
   intermediate filenames can appear in outputs. Pass the directory descriptor to `Tool::run` so the compiler
   can hold the lock across `exec`.
-- [`files.hpp`](./include/files.hpp) provides bounded access to artifact bytes. `GeneratedFile` captures
+- [`files.hpp`](./include/files.hpp) provides anonymous inputs and bounded access to artifact bytes. `GeneratedFile` captures
   an output's file identity before the tool runs and verifies it before editing. `MemoryBuffer` provides the
   same byte-access interface for artifacts returned by APIs.
 - [`elf.hpp`](./include/elf.hpp) edits named sections of 64-bit little-endian ELF files in place.
   [`nix-store.hpp`](./include/nix-store.hpp) replaces hashes at fixed width. Use these on metadata that has been verified
   to carry incidental references. For example, `nvlink` applies the hash transform to `.note.nv.tkinfo`.
+- [`ptx.hpp`](./include/ptx.hpp) rewrites source records in PTX and can pass the new input to the vendor through an
+  anonymous file descriptor. [`path-prefix-map.hpp`](./include/path-prefix-map.hpp) parses and applies
+  `BUILD_PATH_PREFIX_MAP`.
 
 ## CUDA tools
 
 | Executable | Behavior |
 | --- | --- |
-| `nvcc` | Selects the packaged host compiler, stabilizes intermediate filenames where safe, and adds a CUDA 12.9+ seed for eligible single-source compilations. [Compiler wrapper](../packages/cuda_nvcc/README.md#nvcc-wrapper) |
+| `nvcc` | Selects the packaged host compiler, stabilizes intermediate filenames where safe, adds a CUDA 12.9+ seed for eligible single-source compilations, and remaps textual source paths in standalone PTX when requested. [Compiler wrapper](../packages/cuda_nvcc/README.md#nvcc-wrapper) |
 | `nvlink` | Clears Nix store hashes in the cubin's toolkit-info note, including inherited notes. [Linker wrapper](../packages/cuda_nvcc/README.md#nvlink-wrapper) |
+| `ptxas` | Supplies stable source timestamps for CUDA 12.6 through 13.3 and remaps PTX `.file` paths when requested. [Assembler wrapper](../packages/cuda_nvcc/README.md#ptxas-and-fatbinary-wrappers) |
+| `fatbinary` | Remaps matching image identifiers and the source paths in embedded PTX when requested. [Fat binary wrapper](../packages/cuda_nvcc/README.md#ptxas-and-fatbinary-wrappers) |
+| `tileiras` | The existing package wrapper defaults `CUDA_ROOT` for toolkit discovery. When it resolves `ptxas` through `cuda_nvcc`, the assembler remaps source paths for the Tile IR compilation. [Package](../packages/cuda_tileiras.nix) |
+| `cudafe++`, `cicc`, `bin2c` | Internal frontend and embedding stages can carry paths from their inputs. The public tool wrappers handle PTX source directives, fat binary identifiers, and toolkit notes at the relevant output boundaries. |
+| `__nvcc_device_query` | `nvcc -arch=native` uses this helper to choose code generation targets from the host's GPUs. Use explicit architectures for hardware-independent builds. |
+| `cuobjdump`, `nvdisasm`, `tileirdisasm`, `cu++filt` | These inspection tools expose information from their inputs. Use them to verify fixes at the producer. |
+| `ctadvisor`, CUDA-GDB, Nsight, Compute Sanitizer | These tools report compilation timings, runtime observations, or source locations for diagnostics. Their reports are distinct from compiler artifacts. |
+| TensorRT `trtexec` | Known source of nondeterminism. Timing noise during engine builds can change which GPU kernels the builder selects. TensorRT's editable timing cache can pin tactic choices for a specific model, build configuration, and hardware. [NVIDIA TensorRT documentation](https://docs.nvidia.com/deeplearning/tensorrt/10.x.x/inference-library/precision-control.html#algorithm-selection-and-reproducible-builds) |
+
+For a derivation that builds a TensorRT engine, supply its compatible cache with `--timingCacheFile`. On versions
+that expose `--errorOnTimingCacheMiss`, use it to fail if the builder needs to profile an uncached tactic. This
+controls tactic selection. Verify the serialized engine separately if the package requires byte-identical outputs.
+[TensorRT command-line documentation](https://docs.nvidia.com/deeplearning/tensorrt/10.x.x/reference/command-line-programs.html)
+and [trtexec option parser](https://github.com/NVIDIA/TensorRT/blob/release/10.13/samples/common/sampleOptions.cpp)
+
+## In-process compilation and linking
+
+NVRTC, nvJitLink, the PTX Compiler API, libNVVM, and nvFatbin run inside the application. The application supplies
+the compilation or link options and receives the generated bytes. That is where to apply reproducibility policy
+when a package installs or embeds those bytes. The executable adapters are reached only by launching their
+installed paths. Callers can use the artifact helpers directly, without the process or file handling.
+
+- **NVRTC.** Pass stable absolute virtual filenames to `nvrtcCreateProgram` for the primary source and any
+  in-memory headers named in debug metadata. Keep the `#include` spelling consistent with the header name passed
+  to NVRTC and control the paths of headers loaded from disk. Pass an explicit target to `nvrtcCompileProgram`
+  and, with CUDA 12.9 or later, a `--frandom-seed` derived from a stable identifier for the translation unit.
+  `normalizePtxSourceInfo` can remap `.file` paths in the bytes from `nvrtcGetPTX` before the caller links or
+  stores them. `BUILD_PATH_PREFIX_MAP` had an effect only when applied by the caller in these tests.
+  [NVRTC API and compiler options](https://docs.nvidia.com/cuda/archive/13.4.1/nvrtc/index.html)
+
+  In uncached tests with CUDA 12.9.2 and 13.4.3, unseeded outputs differed even in the same directory. Relative
+  source and in-memory header names picked up the working directory. A stable virtual source name and fixed
+  seed made the tested PTX and cubins match across directories with default options or line info. With full
+  debug, `DW_AT_comp_dir` still recorded the working directory. Raw LTO IR differed across directories in all
+  three modes. Its linked cubin matched with default options or line info and differed with full debug. For
+  builds that need full debug or byte-identical raw LTO IR, run the compiler in a process with a stable working
+  directory. Source that uses `__DATE__` or `__TIME__` also needs a stable value supplied by the application.
+  Both versions used the wall clock for those macros even with `SOURCE_DATE_EPOCH` set.
+- **nvJitLink.** Set an explicit target and submit reproducible inputs in a fixed order via `nvJitLinkAddData`
+  or `nvJitLinkAddFile`. The linked cubins matched when the input bytes were held fixed and the caller's
+  directory and input labels or filenames varied. Paths already embedded in the inputs carried through.
+  On CUDA 12.9.2, changing the size and mtime of a file named in a PTX `.file` directive also changed the
+  linked cubin's line table. Passing `true` for `normalizePtxSourceInfo`'s `normalizeTimestamp` parameter
+  made that case repeatable before linking. CUDA 13.4.3 emitted zero for both fields in the same test.
+  [nvJitLink API](https://docs.nvidia.com/cuda/archive/13.4.1/nvjitlink/index.html)
+
+  CUDA 13.4.3 also carried input cubins' `.note.nv.tkinfo` into the linked cubin. When the caller packages the
+  result, it can apply the same fixed-width note edit as `nvlink` after `nvJitLinkGetLinkedCubin` succeeds. The
+  edit targets the toolkit note. Source and debug paths require the corresponding input-side handling.
+
+```cpp
+#include "elf.hpp"
+#include "files.hpp"
+#include "nix-store.hpp"
+
+void cleanCubin(std::span<char> cubin) {
+    cudaWrapper::MemoryBuffer artifact(cubin);
+    cudaWrapper::editElfSections(artifact, ".note.nv.tkinfo", cudaWrapper::blankStoreHashes);
+}
+```

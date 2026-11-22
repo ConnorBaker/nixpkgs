@@ -167,10 +167,12 @@ directly, e.g. Clang, whose `clang-nvlink-wrapper` runs nvlink from the CUDA ins
 (`-fgpu-rdc`) and passes Clang's own library directory, which nvlink records too. It doesn't remove references to the
 Nix store from anything else, e.g. the line information of device code compiled with `-lineinfo` or `-G`.
 
-The libraries which produce device code record only options in the note, never search paths or other paths in the Nix
-store (checked with CUDA 13.4): nvJitLink, nvPTXCompiler, NVRTC, and ptxas (which records at most the basenames of
-files). nvJitLink, like CUDA 13's nvlink, keeps the notes of the cubins it links, so a cubin written by an unwrapped
-nvlink passes its paths on. No package in Nixpkgs uses these libraries to produce device code while building.
+CUDA 13.4's nvJitLink keeps the toolkit notes of the cubins it links, including the paths recorded by an unwrapped
+nvlink. Its caller can use the same note transform on the returned bytes. See
+[in-process compilation and linking](../../wrapper/README.md#in-process-compilation-and-linking).
+
+Debug and line metadata carry paths independently of the toolkit note. See
+[the assembler and fat binary wrappers](#ptxas-and-fatbinary-wrappers) for the paths handled at those stages.
 
 ### Testing
 
@@ -193,3 +195,31 @@ The wrapper is C++23 and builds with stdenv's compiler. Defining `NVLINK_WRAPPER
 directly, e.g. by a fuzzer including the source file with `../../wrapper/include` on its include path. Before changing it,
 check it with `clang-tidy`, `cppcheck`, `g++ -fanalyzer`, and a build with `-fsanitize=address,undefined` running
 the tests above.
+
+## ptxas and fatbinary wrappers
+
+CUDA 12.6 through 13.3 record source file modification times and sizes from the filesystem in `.debug_line` when
+the PTX `.file` record leaves its timestamp unspecified or sets it to zero. The `ptxas` adapter supplies a
+timestamp of 1 and a size of 0 when both were omitted. With an explicit zero timestamp, including hexadecimal and
+unsigned spellings, it keeps the explicit size.
+A nonzero timestamp in the PTX is preserved. CUDA 13.4 and 13.5 already produce stable records for an omitted
+timestamp in the regression case. [NVIDIA PTX ISA](https://docs.nvidia.com/cuda/archive/12.9.0/pdf/ptx_isa_8.8.pdf)
+
+CUDA also copies source paths from PTX into cubin debug metadata and can store the input name in a fat binary
+identifier. The adapters accept `BUILD_PATH_PREFIX_MAP` entries in `target=source` order. For example, the following
+maps paths under the working directory to `/usr/src/project` in device line information and fat binary identifiers.
+
+```sh
+BUILD_PATH_PREFIX_MAP="/usr/src/project=$PWD" nvcc -arch=sm_80 -lineinfo -c "$PWD/kernel.cu" -o kernel.o
+```
+
+`ptxas` remaps paths in textual PTX `.file` directives. `fatbinary` remaps `--ident` and applies the same
+PTX transform to embedded PTX images, which can be present alongside a cubin. `nvcc --ptx` applies the transform
+to standalone PTX written to regular files, including default outputs and `--output-directory`. PTX written
+to standard output or special files goes directly to the caller. `tileiras` uses the assembler's remapping when
+it finds `ptxas` through this toolkit. [Prefix map format](https://reproducible-builds.org/specs/build-path-prefix-map/)
+
+With full device debugging (`-G`), CUDA 13.4 also records paths in DWARF `.debug_info`, including the compilation
+unit name and the working directory. That section arrives as binary data encoded in PTX directives and needs a
+DWARF-aware rewrite. Host debug sections are handled by the host compiler.
+[PTX Writer’s Guide](https://docs.nvidia.com/cuda/ptx-writers-guide-to-interoperability/index.html)

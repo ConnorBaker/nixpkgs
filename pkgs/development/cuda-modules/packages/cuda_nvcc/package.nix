@@ -173,6 +173,19 @@ buildRedist (finalAttrs: {
         mv --verbose "''${!outputBin:?}/bin/nvlink" "''${!outputBin:?}/bin/.nvlink-wrapped"
         install --mode=0755 "${finalAttrs.passthru.nvlinkWrapper}/bin/nvlink-wrapper" "''${!outputBin:?}/bin/nvlink"
       ''
+      # Older ptxas releases put source mtimes in the device line table.
+      + ''
+        nixLog "wrapping ptxas to make its source metadata reproducible"
+        mv --verbose "''${!outputBin:?}/bin/ptxas" "''${!outputBin:?}/bin/.ptxas-wrapped"
+        install --mode=0755 "${finalAttrs.passthru.ptxasWrapper}/bin/ptxas-wrapper" "''${!outputBin:?}/bin/ptxas"
+      ''
+      # fatbinary can write the source path as an identifier and embed PTX
+      # containing its own source paths alongside the assembled cubin.
+      + ''
+        nixLog "wrapping fatbinary to support source-path remapping"
+        mv --verbose "''${!outputBin:?}/bin/fatbinary" "''${!outputBin:?}/bin/.fatbinary-wrapped"
+        install --mode=0755 "${finalAttrs.passthru.fatbinaryWrapper}/bin/fatbinary-wrapper" "''${!outputBin:?}/bin/fatbinary"
+      ''
       # Fix compatibility with glibc 2.42:
       # The cospi|sinpi|rsqrt function signatures in include/common/math_functions.h do not match
       # glibc 2.42's.
@@ -263,6 +276,12 @@ buildRedist (finalAttrs: {
   passthru = {
     nvccWrapper = callPackage ./nvcc-wrapper.nix { };
     nvlinkWrapper = callPackage ./nvlink-wrapper.nix { };
+    ptxasWrapper = callPackage ./ptxas-wrapper.nix { };
+    fatbinaryWrapper = callPackage ../../wrapper/mk-tool-wrapper.nix { } {
+      name = "fatbinary-wrapper";
+      source = ./fatbinary-wrapper.cpp;
+      description = "Wrapper to remap source paths in CUDA fat binaries";
+    };
     gpuCheck = callPackage ./gpu-check.nix { cuda_nvcc = finalAttrs.finalPackage; };
     tests = callPackages ./tests.nix { cuda_nvcc = finalAttrs.finalPackage; };
   };

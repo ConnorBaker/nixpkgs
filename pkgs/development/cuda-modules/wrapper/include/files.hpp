@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <utility>
@@ -38,6 +39,19 @@ class FileDescriptor {
     int fd_;
 };
 
+// Expose rewritten input as a file without leaving anything to clean up.
+inline FileDescriptor anonymousInput(const char *name, std::string_view contents) {
+    FileDescriptor fd(memfd_create(name, 0)); // The vendor inherits the descriptor across exec.
+    if (!fd) throw std::runtime_error(std::string("cannot open ") + name + ": " + std::strerror(errno));
+    while (!contents.empty()) {
+        const auto count = write(fd.get(), contents.data(), contents.size());
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) throw std::runtime_error(std::string("cannot write ") + name + ": " + std::strerror(errno));
+        contents.remove_prefix(static_cast<std::size_t>(count));
+    }
+    return fd;
+}
+
 inline std::string descriptorPath(const FileDescriptor &fd) {
     return "/proc/self/fd/" + std::to_string(fd.get());
 }
@@ -48,6 +62,11 @@ inline void checkFileRange(std::uint64_t size, std::uint64_t offset, std::uint64
 
 inline bool sameFile(const struct stat &a, const struct stat &b) {
     return a.st_dev == b.st_dev && a.st_ino == b.st_ino;
+}
+
+inline bool isSpecialFile(const std::string &path) {
+    struct stat info {};
+    return stat(path.c_str(), &info) == 0 && !S_ISREG(info.st_mode);
 }
 
 inline bool sameFileVersion(const struct stat &a, const struct stat &b) {
@@ -119,6 +138,14 @@ class GeneratedFile {
         }
     }
 
+    template <typename Rewrite> void rewriteText(std::string_view tool, Rewrite rewrite) {
+        edit(tool, [&](Contents &file) {
+            const auto contents = file.read(0, file.size());
+            if (const auto replacement = rewrite(std::string_view(contents.data(), contents.size())))
+                file.replace(*replacement);
+        });
+    }
+
   private:
     class Contents {
       public:
@@ -140,6 +167,13 @@ class GeneratedFile {
         void write(std::uint64_t off, std::span<const char> bytes) {
             checkFileRange(size_, off, bytes.size());
             writeAt(off, bytes);
+        }
+
+        void replace(std::string_view text) {
+            writeAt(0, text);
+            if (text.size() != size_ && ftruncate(fd_, static_cast<off_t>(text.size())) != 0)
+                fileError("cannot resize", path_);
+            size_ = text.size();
         }
 
       private:
