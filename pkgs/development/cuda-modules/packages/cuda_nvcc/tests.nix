@@ -12,9 +12,10 @@
   libcurand,
   llvmPackages,
   python3,
+  runCommand,
   testers,
 }:
-# Tests for the nvlink wrapper; see README.md.
+# Tests for the nvcc and nvlink wrappers; see README.md.
 let
   # nvlink records its command line from CUDA 12.8 for some architectures, including sm_100, and from CUDA 13 for all.
   # The tests link programs without running them, so they use one of those architectures.
@@ -22,6 +23,9 @@ let
   arch = if recordsCommandLine then "sm_100" else lib.head flags.realArches;
 
   cudadevrtDir = "${lib.getOutput "static" cuda_cudart}/lib";
+
+  # Whether the nvcc wrapper passes --frandom-seed. nvcc has that option from CUDA 12.9.
+  seeds = cudaAtLeast "12.9";
 
   helpers = ''
     # Prints the command line recorded in each note written by nvlink.
@@ -88,6 +92,7 @@ let
         cp ${./tests/kernel.cu} kernel.cu
         cp ${./tests/caller.cu} caller.cu
         cp ${./tests/answer.cu} answer.cu
+        cp ${./tests/templates.cu} templates.cu
         cp ${./gpu-check.cu} gpu-check.cu
       ''
       + helpers
@@ -113,6 +118,247 @@ let
     };
 in
 {
+  # nvcc writes the same objects and programs when it runs again.
+  nvcc-reproducible = mkTest "nvcc-reproducible" ''
+    # Runs a command twice and compares the two outputs.
+    twice() {
+      local output="$1"
+      shift
+      "$@" -o "$output"
+      mv "$output" first
+      "$@" -o "$output"
+      if ! cmp first "$output"; then
+        nixErrorLog "$* wrote a different $output the second time"
+        exit 1
+      fi
+    }
+    twice kernel.o nvcc -arch="$arch" -c kernel.cu
+    twice debug.o nvcc -arch="$arch" -g -c kernel.cu
+    twice relocatable.o nvcc -arch="$arch" -rdc=true -c caller.cu
+    # CMake compiles sources that are not named *.cu in this way.
+    cp kernel.cu kernel.cpp
+    twice language.o nvcc -arch="$arch" -x cu -c kernel.cpp
+    cp ${if seeds then "templates.cu" else "kernel.cu"} kernel-no-extension
+    twice extensionless.o nvcc -arch="$arch" -x cu -c kernel-no-extension
+    mkdir pre-include
+    printf '%s\n' '#define PRE_INCLUDED 1' > pre-include/kernel.cu
+    twice pre-include.o nvcc -arch="$arch" -include pre-include/kernel.cu -c kernel.cu
+    cp kernel.cu "source with spaces.cu"
+    printf '%s\n' "-arch=$arch -g -c \"source with spaces.cu\"" > nvcc.optf
+    twice options.o nvcc -optf nvcc.optf
+    # Without -c, the objects are intermediate files as well.
+    twice result nvcc -arch="$arch" kernel.cu
+    ${lib.optionalString seeds ''twice templates.o nvcc -arch="$arch" -c templates.cu''}
+
+    # Without --keep, nvcc names its intermediate files tmpxft_<pid>_...
+    if grep --text --fixed-strings tmpxft ./*.o result; then
+      nixErrorLog "an output contains the name of a temporary file"
+      exit 1
+    fi
+
+    # nvcc without the wrapper must still write different objects. If it does not, the wrapper is no longer needed.
+    for source in kernel.cu ${lib.optionalString seeds "templates.cu"}; do
+      (exec -a nvcc ${cuda_nvcc}/bin/.nvcc-wrapped -arch="$arch" -c "$source" -o unwrapped-1.o)
+      (exec -a nvcc ${cuda_nvcc}/bin/.nvcc-wrapped -arch="$arch" --keep --keep-dir "$(mktemp -d)" -c "$source" \
+        -o unwrapped-2.o)
+      (exec -a nvcc ${cuda_nvcc}/bin/.nvcc-wrapped -arch="$arch" --keep --keep-dir "$(mktemp -d)" -c "$source" \
+        -o unwrapped-3.o)
+      if cmp --silent unwrapped-1.o unwrapped-2.o; then
+        nixErrorLog "expected nvcc to name the object of $source after a temporary file"
+        exit 1
+      fi
+      if ${lib.boolToString seeds} && [[ $source == templates.cu ]] && cmp --silent unwrapped-2.o unwrapped-3.o; then
+        nixErrorLog "expected nvcc to name the symbols of $source after its process ID"
+        exit 1
+      fi
+    done
+
+    # The wrapper removes the directory in which nvcc kept the intermediate files.
+    if [[ -n $(find "$TMPDIR" -maxdepth 1 -name 'nvcc-keep-*') ]]; then
+      nixErrorLog "the wrapper left a directory in $TMPDIR"
+      exit 1
+    fi
+  '';
+
+  # The cases in which the wrapper does not override the caller.
+  nvcc-wrapper = mkTest "nvcc-wrapper" ''
+    # Two sources with the same name cannot share a directory for their intermediate files. Without -c, their objects
+    # are in that directory too.
+    mkdir a b
+    echo 'int a() { return 1; }' > a/same.cu
+    echo 'int a(); int main() { return a(); }' > b/same.cu
+    nvcc -arch="$arch" a/same.cu b/same.cu -o result
+
+    # nvcc uses the directory that the caller passes, and the wrapper does not remove it. CMake depends on this when
+    # it identifies nvcc.
+    mkdir kept
+    nvcc -arch="$arch" --keep --keep-dir kept -c kernel.cu -o kernel.o
+    [[ -e kept/kernel.ptx ]]
+    nvcc -arch="$arch" -rdc=true --keep -c caller.cu -o caller.o
+    [[ -e caller.ptx ]]
+    rm caller.ptx
+    NVCC_APPEND_FLAGS=$'-O2\t--keep' nvcc -arch="$arch" -rdc=true -c caller.cu -o caller.o
+    [[ -e caller.ptx ]]
+    NVCC_APPEND_FLAGS="--keep --keep-dir=kept" nvcc -arch="$arch" -c answer.cu -o answer.o
+    [[ -e kept/answer.ptx ]]
+    printf '%s\n' "-arch=$arch --keep --keep-dir=kept -c \"options source.cu\"" > nvcc.optf
+    cp kernel.cu "options source.cu"
+    nvcc --options-file=nvcc.optf -o options.o
+    [[ -e "kept/options source.ptx" ]]
+    ${lib.optionalString seeds ''
+      # nvcc uses the seed that the caller passes.
+      nvcc -arch="$arch" --frandom-seed=1 -c templates.cu -o seed-1.o
+      nvcc -arch="$arch" --frandom-seed=2 -c templates.cu -o seed-2.o
+      NVCC_PREPEND_FLAGS=--frandom-seed=1 nvcc -arch="$arch" -c templates.cu -o seed-3.o
+      if cmp --silent seed-1.o seed-2.o || ! cmp seed-1.o seed-3.o; then
+        nixErrorLog "expected the seed passed to nvcc to be used"
+        exit 1
+      fi
+    ''}
+
+    # The wrapper exits with the status of nvcc, and removes the directory when nvcc fails too.
+    echo 'syntax error' > broken.cu
+    expected=0
+    (exec -a nvcc ${cuda_nvcc}/bin/.nvcc-wrapped -arch="$arch" -c broken.cu -o broken.o) || expected=$?
+    status=0
+    nvcc -arch="$arch" -c broken.cu -o broken.o || status=$?
+    if [[ $expected == 0 || $status != "$expected" ]]; then
+      nixErrorLog "expected nvcc to exit with its status ($expected), got $status"
+      exit 1
+    fi
+
+    # A configure check can pass an output that is not in a writable directory.
+    nvcc -arch="$arch" -c kernel.cu -o /dev/null
+
+    nvcc --version
+    nvcc -arch="$arch" -E kernel.cu > /dev/null
+
+    # The vendor driver needs to find the installed profile even through an external symlink.
+    mkdir linked
+    ln -s ${cuda_nvcc}/bin/nvcc linked/nvcc
+    env -i TMPDIR="$TMPDIR" ./linked/nvcc -arch="$arch" --ptx kernel.cu -o linked.ptx
+
+    if [[ -n $(find "$TMPDIR" -maxdepth 1 -name 'nvcc-keep-*') ]]; then
+      nixErrorLog "the wrapper left a directory in $TMPDIR"
+      exit 1
+    fi
+  '';
+
+  nvcc-process =
+    runCommand "${cuda_nvcc.name}-nvcc-process"
+      {
+        meta = { inherit (cuda_nvcc.meta) badPlatforms platforms teams; };
+      }
+      ''
+        ${python3}/bin/python3 -P ${./tests/nvcc-process.py} ${cuda_nvcc.nvccWrapper}/bin/nvcc-wrapper
+        touch "$out"
+      '';
+
+  nvcc-ptx-source-paths = mkTest "nvcc-ptx-source-paths" ''
+    mkdir 'source tree' outputs
+    cp kernel.cu 'source tree/kernel.cu'
+    cp kernel.cu 'source tree/second.cu'
+    export BUILD_PATH_PREFIX_MAP="/usr/src/cuda-test=$PWD/source tree"
+
+    # With -odir, nvcc writes one PTX file per input in the named directory.
+    printf '%s\n' '--ptx -lineinfo -odir outputs "source tree/kernel.cu" "source tree/second.cu"' > compile.optf
+    nvcc -arch=sm_80 --options-file=compile.optf
+    for file in kernel second; do
+      grep -F "\"/usr/src/cuda-test/$file.cu\"" "outputs/$file.ptx"
+      if grep -F "$PWD/source tree/" "outputs/$file.ptx"; then
+        nixErrorLog "nvcc retained a remapped source path in standalone PTX"
+        exit 1
+      fi
+    done
+    ptxas -arch=sm_80 -o shortened.cubin outputs/kernel.ptx
+
+    nvcc -arch=sm_80 --ptx -lineinfo 'source tree/kernel.cu'
+    grep -F '"/usr/src/cuda-test/kernel.cu"' kernel.ptx
+
+    # An explicit filename overrides -odir. The replacement may grow the file.
+    target="$PWD/canonical/source/tree"
+    BUILD_PATH_PREFIX_MAP="$target=$PWD/source tree" nvcc -arch=sm_80 --ptx -lineinfo \
+      -odir outputs -o explicit 'source tree/kernel.cu'
+    grep -F "\"$target/kernel.cu\"" explicit
+    ptxas -arch=sm_80 -o lengthened.cubin explicit
+
+    # A stream still goes directly to the caller.
+    nvcc -arch=sm_80 --ptx -lineinfo -o - 'source tree/kernel.cu' > streamed.ptx
+    grep -F "\"$PWD/source tree/kernel.cu\"" streamed.ptx
+  '';
+
+  ptxas-lineinfo = mkTest "ptxas-lineinfo" ''
+    mkdir 'source tree'
+    printf '%s\n' '// device source' > 'source tree/test.cu'
+    cat > input.ptx << EOF
+    .version 8.0
+    .target sm_80
+    .address_size 64
+    .file 1 "$PWD/source tree/test.cu"
+    .visible .entry test() {
+      .loc 1 1 0
+      ret;
+    }
+    EOF
+    printf '%s\n' '-arch=sm_80 -lineinfo "input.ptx" -o "file output.cubin"' > ptxas.optf
+
+    # Cross a ULEB128 size boundary in the raw line table.
+    for mtime in 1 1900000000; do
+      touch -d "@$mtime" 'source tree/test.cu'
+      BUILD_PATH_PREFIX_MAP= ptxas --options-file=ptxas.optf
+      mv 'file output.cubin' "$mtime.cubin"
+    done
+    cmp 1.cubin 1900000000.cubin
+    readelf --debug-dump=rawline 1.cubin | grep -F "$PWD/source tree"
+
+    cp input.ptx 'input=with spaces.ptx'
+    printf '%s\n' '-lineinfo "input=with spaces.ptx" -o "mapped.cubin"' > inner.optf
+    printf '%s\n' '-arch=sm_80 --options-file=inner.optf' > outer.optf
+    BUILD_PATH_PREFIX_MAP="/usr/src/cuda-test=$PWD/source tree" ptxas -optf outer.optf
+    readelf --debug-dump=rawline mapped.cubin > mapped.txt
+    grep -F /usr/src/cuda-test mapped.txt
+    grep -F test.cu mapped.txt
+    if grep -F "$PWD/source tree" mapped.txt; then
+      nixErrorLog "ptxas retained an explicitly remapped source path"
+      exit 1
+    fi
+
+    # Nonzero timestamps explicitly set by the PTX generator carry through.
+    sed 's/test\.cu"$/test.cu", 12345, 42/' input.ptx > explicit.ptx
+    ptxas -arch=sm_80 -lineinfo -o explicit.cubin explicit.ptx
+    readelf --debug-dump=rawline explicit.cubin | grep -E '12345[[:space:]]+42[[:space:]]+test\.cu'
+
+    # PTX allows hexadecimal and binary integer literals with an unsigned suffix.
+    sed -e 's/\.file 1 /.file 0x1 /' -e 's/test\.cu"$/test.cu", 0B0U, 42/' input.ptx > zero.ptx
+    ptxas -arch=sm_80 -lineinfo -o zero.cubin zero.ptx
+    ${lib.optionalString (cudaOlder "13.4") ''
+      readelf --debug-dump=rawline zero.cubin | grep -E '[[:space:]]1[[:space:]]+42[[:space:]]+test\.cu'
+    ''}
+  '';
+
+  fatbinary-source-paths = mkTest "fatbinary-source-paths" ''
+    BUILD_PATH_PREFIX_MAP="/usr/src/cuda-test=$PWD" nvcc -lineinfo \
+      '-gencode=arch=compute_80,code=[sm_80,compute_80]' -c "$PWD/kernel.cu" -o fatbin.o
+    cuobjdump -ptx fatbin.o > embedded.ptx
+    cuobjdump -elf fatbin.o > embedded.elf
+    grep -F 'identifier = /usr/src/cuda-test/kernel.cu' embedded.ptx
+    grep -E '\.file[[:space:]]+[0-9]+ "/usr/src/cuda-test/kernel\.cu"' embedded.ptx
+    grep -F /usr/src/cuda-test embedded.elf
+    if grep -F "$PWD/kernel.cu" embedded.ptx embedded.elf; then
+      nixErrorLog "fatbinary retained an explicitly remapped source path"
+      exit 1
+    fi
+
+    # Linux limits the size of a single argv entry. An options file can hold a larger identifier.
+    nvcc -arch=sm_80 -ptx kernel.cu -o input.ptx
+    printf -v padding '%140000s' ""
+    printf -- '--ident="%s/%s"\n' "$PWD" "''${padding// /x}" > identifier.optf
+    printf '%s\n' '-optf identifier.optf --image3=kind=ptx,sm=80,file=input.ptx' > fatbinary.optf
+    BUILD_PATH_PREFIX_MAP="/usr/src/cuda-test=$PWD" fatbinary -64 -optf fatbinary.optf --create=large.fatbin
+    cuobjdump -ptx large.fatbin > large.ptx
+    grep -q -F 'identifier = /usr/src/cuda-test/xxxxxxxx' large.ptx
+  '';
+
   # nvcc runs nvlink for a whole-program link, even without -rdc.
   nvcc-whole-program = mkTest "nvcc-whole-program" ''
     nvcc -arch="$arch" kernel.cu -o result
@@ -288,6 +534,10 @@ in
       # Outside the foreground of a terminal, as here, nvlink runs in a process group of its own.
       expect "$(cat log)" $'x y\n\nFAKE_ENV=a b\npid='"$(sed -n 's/^pid=//p' log)"$'\ngroup=own' \
         "nvlink's arguments, environment, and process group"
+      FAKE=exit FAKE_STATUS=0 ./nvlink -L -o
+      FAKE=exit FAKE_STATUS=0 ./nvlink -L -optf
+      FAKE=exit FAKE_STATUS=0 ./nvlink -o unused --version
+      [[ ! -e unused ]]
       expect "$(status ./alone/nvlink)" 127 "the exit status without .nvlink-wrapped next to the wrapper"
       # The wrapper finds nvlink next to itself rather than to the link it was run through.
       mkdir linked

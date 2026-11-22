@@ -23,6 +23,12 @@ is being constructed, the attribute for that package will still exist (but refer
 to a broken package). This prevents missing attribute errors as the package set
 evolves.
 
+## Tool wrappers
+
+The [CUDA tool wrapper library](./wrapper/README.md) provides Rust helpers for tools with sources of nondeterminism
+or unintended Nix store references. Its README describes how packages add adapters and where the other CUDA tools
+can reuse the library.
+
 ## Distinguished packages
 
 Some packages are purposefully not in the `packages` directory. These are packages

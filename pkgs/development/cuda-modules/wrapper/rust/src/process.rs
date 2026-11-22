@@ -1,0 +1,269 @@
+use crate::arguments::{Argument, Arguments};
+use crate::files::{Contents, GeneratedFile};
+use std::env;
+use std::ffi::{OsStr, OsString};
+use std::fs::{self, File, OpenOptions};
+use std::io;
+use std::mem::MaybeUninit;
+use std::os::fd::AsRawFd;
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::process::{CommandExt, ExitStatusExt};
+use std::path::PathBuf;
+use std::process::{Command, ExitCode, ExitStatus};
+use std::sync::atomic::{AtomicU8, Ordering};
+
+static CLOSED_STDIO: AtomicU8 = AtomicU8::new(0);
+
+// The Rust runtime fills closed standard descriptors before main. Record
+// their original state at ELF startup so we can preserve it in the vendor.
+#[used]
+#[unsafe(link_section = ".init_array")]
+static SAVE_STDIO: extern "C" fn() = save_stdio;
+
+extern "C" fn save_stdio() {
+    let mut closed = 0;
+    for fd in 0..=libc::STDERR_FILENO {
+        // SAFETY: F_GETFD takes no third argument and does not modify fd.
+        if unsafe { libc::fcntl(fd, libc::F_GETFD) } < 0 {
+            closed |= 1 << fd;
+        }
+    }
+    CLOSED_STDIO.store(closed, Ordering::Relaxed);
+}
+
+pub struct Tool {
+    name: &'static str,
+    pub args: Arguments,
+    argv0: OsString,
+    public: PathBuf,
+    vendor: PathBuf,
+}
+
+impl Tool {
+    fn new(name: &'static str) -> io::Result<Self> {
+        let executable = fs::read_link("/proc/self/exe")?;
+        let mut args = env::args_os();
+        let argv0 = args.next().unwrap_or_else(|| OsString::from(name));
+        Ok(Self {
+            name,
+            args: args.map(OsStringExt::into_vec).collect(),
+            argv0,
+            public: executable.with_file_name(name),
+            vendor: executable.with_file_name(format!(".{name}-wrapped")),
+        })
+    }
+
+    pub fn command(&self, args: &[Argument]) -> Command {
+        let mut command = Command::new(&self.vendor);
+        command.arg0(&self.argv0);
+        command.args(args.iter().map(|arg| OsStr::from_bytes(arg)));
+        let closed = CLOSED_STDIO.load(Ordering::Relaxed);
+        if closed != 0 {
+            // SAFETY: close is async-signal-safe. These descriptors were
+            // closed in the caller, and the wrapper installs no stdio pipes.
+            unsafe {
+                command.pre_exec(move || {
+                    for fd in 0..=libc::STDERR_FILENO {
+                        if closed & (1 << fd) != 0 {
+                            libc::close(fd);
+                        }
+                    }
+                    Ok(())
+                });
+            }
+        }
+        command
+    }
+
+    pub fn profile_command(&self, args: &[Argument]) -> Command {
+        let mut command = self.command(args);
+        command.arg0(&self.public);
+        command
+    }
+
+    fn launch_failed(&self, error: io::Error) -> i32 {
+        eprintln!(
+            "{} wrapper: error: exec {}: {error}",
+            self.name,
+            self.vendor.display()
+        );
+        127
+    }
+
+    pub fn exec(&self, mut command: Command) -> i32 {
+        self.launch_failed(command.exec())
+    }
+
+    pub fn run(&self, command: Command, lease: Option<&File>) -> io::Result<ExitStatus> {
+        run(command, lease, |error| self.launch_failed(error))
+    }
+
+    pub fn edit_output(
+        &self,
+        command: Command,
+        output: PathBuf,
+        edit: impl FnOnce(&mut Contents) -> io::Result<()>,
+    ) -> io::Result<i32> {
+        let output = GeneratedFile::new(output)?;
+        let status = exit_status(self.run(command, None)?);
+        if status == 0 {
+            output.edit(self.name, edit)?;
+        }
+        Ok(status)
+    }
+}
+
+pub fn wrapper_main(name: &'static str, wrapper: impl FnOnce(Tool) -> io::Result<i32>) -> ExitCode {
+    match Tool::new(name).and_then(wrapper) {
+        Ok(code) => ExitCode::from(code as u8),
+        Err(error) => {
+            eprintln!("{name} wrapper: error: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+struct SignalMask {
+    watched: libc::sigset_t,
+    original: libc::sigset_t,
+}
+
+impl SignalMask {
+    fn block() -> io::Result<Self> {
+        let mut watched = MaybeUninit::zeroed();
+        // Linux writes the kernel's signal mask, which can be smaller than sigset_t.
+        let mut original = MaybeUninit::zeroed();
+        // SAFETY: libc initializes the sets. The signal names are valid, and
+        // the wrapper uses the default SIGCHLD disposition to collect status.
+        unsafe {
+            if libc::signal(libc::SIGCHLD, libc::SIG_DFL) == libc::SIG_ERR {
+                return Err(io::Error::last_os_error());
+            }
+            libc::sigemptyset(watched.as_mut_ptr());
+            let mut watched = watched.assume_init();
+            for signal in [
+                libc::SIGHUP,
+                libc::SIGINT,
+                libc::SIGQUIT,
+                libc::SIGTERM,
+                libc::SIGUSR1,
+                libc::SIGUSR2,
+                libc::SIGCHLD,
+            ] {
+                libc::sigaddset(&mut watched, signal);
+            }
+            check(libc::sigprocmask(
+                libc::SIG_BLOCK,
+                &watched,
+                original.as_mut_ptr(),
+            ))?;
+            Ok(Self {
+                watched,
+                original: original.assume_init(),
+            })
+        }
+    }
+}
+
+impl Drop for SignalMask {
+    fn drop(&mut self) {
+        // SAFETY: original was initialized by sigprocmask in block().
+        unsafe { libc::sigprocmask(libc::SIG_SETMASK, &self.original, std::ptr::null_mut()) };
+    }
+}
+
+fn check(result: libc::c_int) -> io::Result<()> {
+    if result < 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+fn in_foreground() -> bool {
+    OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOCTTY)
+        .open("/dev/tty")
+        // SAFETY: the open file descriptor stays valid for the call.
+        .is_ok_and(|tty| unsafe { libc::tcgetpgrp(tty.as_raw_fd()) == libc::getpgrp() })
+}
+
+fn run(
+    mut command: Command,
+    lease: Option<&File>,
+    launch_error: impl FnOnce(io::Error) -> i32,
+) -> io::Result<ExitStatus> {
+    let mask = SignalMask::block()?;
+    let foreground = in_foreground();
+    if !foreground {
+        command.process_group(0);
+    }
+    let original = mask.original;
+    let parent = std::process::id() as libc::pid_t;
+    let lease = lease.map(AsRawFd::as_raw_fd);
+    // SAFETY: the closure uses only async-signal-safe system calls and
+    // constructs errors from errno. Captured descriptors stay open until spawn returns.
+    unsafe {
+        command.pre_exec(move || {
+            check(libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL))?;
+            if libc::getppid() != parent {
+                libc::_exit(127);
+            }
+            if let Some(lease) = lease {
+                // Keep the open file description alive without using stdio.
+                check(libc::fcntl(lease, libc::F_DUPFD, libc::STDERR_FILENO + 1))?;
+            }
+            check(libc::sigprocmask(
+                libc::SIG_SETMASK,
+                &original,
+                std::ptr::null_mut(),
+            ))
+        });
+    }
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            return Ok(ExitStatus::from_raw(launch_error(error) << 8));
+        }
+    };
+    let pid = child.id() as libc::pid_t;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok(status);
+        }
+        let mut info = MaybeUninit::<libc::siginfo_t>::zeroed();
+        // SAFETY: the signal set is blocked and sigwaitinfo initializes info
+        // on success. The child is in its requested process group after spawn.
+        unsafe {
+            let signal = libc::sigwaitinfo(&mask.watched, info.as_mut_ptr());
+            if signal < 0 {
+                let error = io::Error::last_os_error();
+                if error.kind() == io::ErrorKind::Interrupted {
+                    continue;
+                }
+                return Err(error);
+            }
+            if signal != libc::SIGCHLD {
+                if !foreground {
+                    libc::kill(-pid, signal);
+                } else if info.assume_init().si_code != libc::SI_KERNEL {
+                    libc::kill(pid, signal);
+                }
+            }
+        }
+    }
+}
+
+pub fn exit_status(status: ExitStatus) -> i32 {
+    if let Some(signal) = status.signal() {
+        // SAFETY: status supplies a valid signal number.
+        unsafe {
+            libc::signal(signal, libc::SIG_DFL);
+            libc::raise(signal);
+        }
+        return 128 + signal;
+    }
+    status.code().unwrap_or(1)
+}
