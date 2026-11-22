@@ -11,7 +11,10 @@ namespace {
 
 namespace fs = std::filesystem;
 using namespace std::literals;
+using cudaWrapper::Argument;
 using cudaWrapper::Arguments;
+using cudaWrapper::EscapedQuote;
+using cudaWrapper::OptionKind;
 using cudaWrapper::environment;
 
 std::string_view optionName(std::string_view spelling) {
@@ -30,15 +33,17 @@ constexpr std::array operands{
     "Xptxas"sv, "ptxas-options"sv, "Xnvlink"sv, "nvlink-options"sv, "Xnvprune"sv, "nvprune-options"sv, "Xtileiras"sv,
     "tileiras-options"sv, "time"sv, "fdevice-time-trace"sv, "run-args"sv,
     "create-pch"sv, "use-pch"sv, "pch-dir"sv, "qpp-config"sv,
+    "keep-dir"sv, "frandom-seed"sv, "x"sv, "o"sv, "output-file"sv, "odir"sv, "output-directory"sv,
 };
 
-bool takesOperand(std::string_view name) {
-    return name == "keep-dir" || name == "frandom-seed" || name == "x" ||
-           name == "o" || name == "output-file" || name == "odir" || name == "output-directory" ||
-           std::ranges::contains(operands, name);
+OptionKind classify(std::string_view spelling) {
+    const auto name = optionName(spelling);
+    if (name == "optf" || name == "options-file") return OptionKind::optionsFiles;
+    return std::ranges::contains(operands, name) ? OptionKind::operand : OptionKind::plain;
 }
 
 struct Compilation {
+    Arguments effective;
     Arguments sources;
     std::optional<std::string> output;
     fs::path outputDirectory;
@@ -60,44 +65,54 @@ struct Compilation {
 };
 
 std::optional<Compilation> inspect(const Arguments &args) {
+    constexpr std::array passThrough{
+        "dryrun"sv, "version"sv, "V"sv, "h"sv, "help"sv, "E"sv, "preprocess"sv, "M"sv, "MM"sv,
+        "generate-dependencies"sv, "generate-nonsystem-dependencies"sv, "clean"sv, "clean-targets"sv,
+    };
     Compilation build;
     Arguments inputs;
     bool explicitLanguage = false;
-    for (std::size_t i = 0; i < args.size(); ++i) {
-        const std::string_view arg = args[i];
-        const cudaWrapper::Option option(arg);
-        const auto name = optionName(option.name);
-        if (name == "dryrun" || name == "version" || name == "V" || name == "h" || name == "help" ||
-            name == "E" || name == "preprocess" || name == "M" || name == "MM" || name == "generate-dependencies" ||
-            name == "generate-nonsystem-dependencies" || name == "clean" || name == "clean-targets")
-            return std::nullopt;
+    bool bypass = false;
+    const auto inspectArgument = [&](const Argument &arg) {
+        build.effective.append_range(arg.words);
+        const auto name = optionName(arg.name);
+        bypass |= std::ranges::contains(passThrough, name);
         if (name == "keep" || name == "keep-dir" || name == "save-temps" ||
             name == "objdir-as-tempdir" || name == "objtemp")
             build.keep = false;
         if (name == "frandom-seed") build.seed = false;
         if (name == "ptx") build.ptx = true;
         if (name == "o" || name == "output-file") {
-            build.output = option.value(args, i);
+            build.output = arg.value;
         } else if (name == "odir" || name == "output-directory") {
-            build.outputDirectory = option.value(args, i);
+            build.outputDirectory = arg.value;
         } else if (name == "x") {
-            const auto lang = option.value(args, i);
-            explicitLanguage = lang == "cu" || lang == "c++" || lang == "c";
-        } else if (!option.inlineValue && takesOperand(name)) {
-            ++i;
-        } else if (!arg.empty() && !arg.starts_with('-')) {
-            inputs.emplace_back(arg);
+            explicitLanguage = arg.value == "cu" || arg.value == "c++" || arg.value == "c";
+        } else if (arg.kind == OptionKind::plain && !arg.value.empty() && !arg.value.starts_with('-')) {
+            inputs.emplace_back(arg.value);
         }
+    };
+    try {
+        auto supplied = cudaWrapper::tokenize(environment("NVCC_PREPEND_FLAGS"), EscapedQuote::preserve);
+        supplied.append_range(args);
+        supplied.append_range(cudaWrapper::tokenize(environment("NVCC_APPEND_FLAGS"), EscapedQuote::preserve));
+        cudaWrapper::visitExpandedArguments(supplied, classify, EscapedQuote::preserve, 4 * 1024 * 1024,
+                                            inspectArgument);
+    } catch (const cudaWrapper::OptionsError &) {
+        // Let nvcc handle invocations whose options could not be inspected.
+        return std::nullopt;
     }
+    if (bypass) return std::nullopt;
+
     constexpr std::array extensions{".cu"sv, ".c"sv, ".cc"sv, ".cxx"sv, ".cpp"sv, ".c++"sv, ".C"sv, ".CPP"sv};
     Arguments stems;
-    for (const auto &input : inputs) {
+    for (auto &input : inputs) {
         const fs::path path(input);
         if (!explicitLanguage && !std::ranges::contains(extensions, path.extension().native())) continue;
         const auto stem = path.stem().native();
         if (std::ranges::contains(stems, stem)) build.keep = false;
         stems.push_back(stem);
-        build.sources.push_back(input);
+        build.sources.push_back(std::move(input));
     }
     if (build.sources.empty()) return std::nullopt;
     // nvcc takes one seed per invocation. A shared seed would violate NVIDIA's
@@ -106,30 +121,8 @@ std::optional<Compilation> inspect(const Arguments &args) {
     return build;
 }
 
-std::optional<Arguments> effectiveArguments(const Arguments &args) {
-    using cudaWrapper::EscapedQuote;
-    using cudaWrapper::OptionKind;
-    try {
-        auto supplied = cudaWrapper::tokenize(environment("NVCC_PREPEND_FLAGS"), EscapedQuote::preserve);
-        supplied.insert(supplied.end(), args.begin(), args.end());
-        const auto appended = cudaWrapper::tokenize(environment("NVCC_APPEND_FLAGS"), EscapedQuote::preserve);
-        supplied.insert(supplied.end(), appended.begin(), appended.end());
-
-        return cudaWrapper::expandOptions(supplied, [](std::string_view spelling) {
-            const auto name = optionName(spelling);
-            if (name == "optf" || name == "options-file") return OptionKind::optionsFiles;
-            return takesOperand(name) ? OptionKind::operand : OptionKind::plain;
-        }, EscapedQuote::preserve, 4 * 1024 * 1024);
-    } catch (const cudaWrapper::OptionsError &) {
-        // Let nvcc handle invocations whose options could not be inspected.
-        return std::nullopt;
-    }
-}
-
 int compile(const cudaWrapper::Tool &tool, const Arguments &args) {
-    const auto effective = effectiveArguments(args);
-    if (!effective) return tool.exec(args);
-    const auto build = inspect(*effective);
+    const auto build = inspect(args);
     if (!build) return tool.exec(args);
 
     std::error_code error;
@@ -143,7 +136,7 @@ int compile(const cudaWrapper::Tool &tool, const Arguments &args) {
     std::optional<cudaWrapper::ScratchDirectory> scratch;
     if (build->keep) {
         const auto tmp = environment("TMPDIR");
-        const auto id = cudaWrapper::stableId(cwd.native(), *effective);
+        const auto id = cudaWrapper::stableId(cwd.native(), build->effective);
         const auto path = fs::path(tmp.empty() ? "/tmp"sv : tmp) / ("nvcc-keep-" + id);
         scratch.emplace(path, "nvcc");
         if (*scratch) {

@@ -46,19 +46,14 @@ std::optional<std::string> remapImage(std::string_view image, const cudaWrapper:
 int run(const cudaWrapper::Tool &tool, int argc, char **argv) {
     const cudaWrapper::PathPrefixMap paths(cudaWrapper::environment("BUILD_PATH_PREFIX_MAP"));
     if (paths.empty()) return tool.exec(argv);
-    try {
-        const auto command = cudaWrapper::rewriteOptions({argv + 1, argv + argc}, classify,
-            [&](std::string_view name, OptionKind, std::string_view value,
-                cudaWrapper::RewrittenArguments &inputs) -> std::optional<std::string> {
-                if (name == "--ident" || name == "-ident") return paths.remap(value);
-                if (name == "--image3" || name == "-image3" || name == "--image2" || name == "-image2")
-                    return remapImage(value, paths, inputs);
-                return std::nullopt;
-            });
-        if (command) return tool.exec(command->args, argv[0]);
-    } catch (const cudaWrapper::OptionsError &) {
-        // Preserve the vendor's diagnostics for invocations we cannot inspect.
-    }
+    const auto command = cudaWrapper::rewriteOptions({argv + 1, argv + argc}, classify,
+        [&](const cudaWrapper::Argument &arg, cudaWrapper::RewrittenArguments &inputs) -> std::optional<std::string> {
+            if (arg.name == "--ident" || arg.name == "-ident") return paths.remap(arg.value);
+            if (arg.name == "--image3" || arg.name == "-image3" || arg.name == "--image2" || arg.name == "-image2")
+                return remapImage(arg.value, paths, inputs);
+            return std::nullopt;
+        });
+    if (command) return tool.exec(command->args, argv[0]);
     return tool.exec(argv);
 }
 

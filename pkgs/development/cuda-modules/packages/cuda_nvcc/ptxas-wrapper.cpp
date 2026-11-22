@@ -30,23 +30,18 @@ int run(const cudaWrapper::Tool &tool, int argc, char **argv) {
     const cudaWrapper::PathPrefixMap paths(cudaWrapper::environment("BUILD_PATH_PREFIX_MAP"));
     if (!PTXAS_INHERITS_MTIME && paths.empty()) return tool.exec(argv);
     bool informational = false;
-    try {
-        const auto command = cudaWrapper::rewriteOptions({argv + 1, argv + argc}, classify,
-            [&](std::string_view name, OptionKind kind, std::string_view value,
-                cudaWrapper::RewrittenArguments &inputs) -> std::optional<std::string> {
-                if (cudaWrapper::isInformational(name)) informational = true;
-                if (informational) return std::nullopt;
-                if (name == "-ias" || name == "--input-as-string")
-                    return cudaWrapper::normalizePtxSourceInfo(value, paths, PTXAS_INHERITS_MTIME);
-                if (kind == OptionKind::plain && !value.starts_with('-'))
-                    if (auto fd = cudaWrapper::rewrittenPtxInput(std::string(value), paths, PTXAS_INHERITS_MTIME))
-                        return inputs.addFile(std::move(*fd));
-                return std::nullopt;
-            });
-        if (command && !informational) return tool.exec(command->args, argv[0]);
-    } catch (const cudaWrapper::OptionsError &) {
-        // Preserve the vendor's diagnostics for invocations we cannot inspect.
-    }
+    const auto command = cudaWrapper::rewriteOptions({argv + 1, argv + argc}, classify,
+        [&](const cudaWrapper::Argument &arg, cudaWrapper::RewrittenArguments &inputs) -> std::optional<std::string> {
+            informational |= cudaWrapper::isInformational(arg.name);
+            if (informational) return std::nullopt;
+            if (arg.name == "-ias" || arg.name == "--input-as-string")
+                return cudaWrapper::normalizePtxSourceInfo(arg.value, paths, PTXAS_INHERITS_MTIME);
+            if (arg.kind == OptionKind::plain && !arg.value.starts_with('-'))
+                if (auto fd = cudaWrapper::rewrittenPtxInput(std::string(arg.value), paths, PTXAS_INHERITS_MTIME))
+                    return inputs.addFile(std::move(*fd));
+            return std::nullopt;
+        });
+    if (command && !informational) return tool.exec(command->args, argv[0]);
     return tool.exec(argv);
 }
 
