@@ -8,10 +8,11 @@ const OPERANDS: &[&[u8]] = &[
     b"Xptxas", b"ptxas-options", b"Xnvlink", b"nvlink-options", b"Xnvprune", b"nvprune-options", b"Xtileiras",
     b"tileiras-options", b"time", b"fdevice-time-trace", b"run-args",
     b"create-pch", b"use-pch", b"pch-dir", b"qpp-config",
+    b"keep-dir", b"frandom-seed", b"x", b"o", b"output-file", b"odir", b"output-directory",
 ];
 
 use cuda_tool_wrapper::{
-    arguments::{Argument, Arguments, Kind, Quote, expand, split_option, tokenize},
+    arguments::{Argument, Arguments, Kind, Quote, expand, scan, tokenize},
     files::{GeneratedFile, special_file},
     process::{Tool, exit_status, wrapper_main},
     ptx::{PathPrefixMap, normalize_source_info},
@@ -30,18 +31,20 @@ fn bare_option(name: &[u8]) -> &[u8] {
         .unwrap_or_default()
 }
 
-fn takes_operand(name: &[u8]) -> bool {
-    matches!(
-        name,
-        b"keep-dir"
-            | b"frandom-seed"
-            | b"x"
-            | b"o"
-            | b"output-file"
-            | b"odir"
-            | b"output-directory"
-    ) || OPERANDS.contains(&name)
+fn classify(name: &[u8]) -> Kind {
+    match bare_option(name) {
+        b"optf" | b"options-file" => Kind::OptionsFile,
+        name if OPERANDS.contains(&name) => Kind::Operand,
+        _ => Kind::Plain,
+    }
 }
+
+#[rustfmt::skip]
+const PASS_THROUGH: &[&[u8]] = &[
+    b"dryrun", b"version", b"V", b"h", b"help", b"E", b"preprocess",
+    b"M", b"MM", b"generate-dependencies", b"generate-nonsystem-dependencies",
+    b"clean", b"clean-targets",
+];
 
 fn effective_arguments(args: &[Argument]) -> io::Result<Arguments> {
     let flags = |name| {
@@ -53,16 +56,7 @@ fn effective_arguments(args: &[Argument]) -> io::Result<Arguments> {
     let mut effective = flags("NVCC_PREPEND_FLAGS")?;
     effective.extend_from_slice(args);
     effective.extend(flags("NVCC_APPEND_FLAGS")?);
-    expand(
-        &effective,
-        |name| match bare_option(name) {
-            b"optf" | b"options-file" => Kind::OptionsFile,
-            name if takes_operand(name) => Kind::Operand,
-            _ => Kind::Plain,
-        },
-        Quote::Preserve,
-        4 * 1024 * 1024,
-    )
+    expand(&effective, classify, Quote::Preserve, 4 * 1024 * 1024)
 }
 
 struct Compilation {
@@ -86,60 +80,36 @@ impl Compilation {
         };
         let mut explicit_language = false;
         let mut inputs = Vec::new();
-        let mut args = args.iter();
-        while let Some(arg) = args.next() {
-            let (spelling, bound) = split_option(arg);
-            let name = bare_option(spelling);
-            if matches!(
-                name,
-                b"dryrun"
-                    | b"version"
-                    | b"V"
-                    | b"h"
-                    | b"help"
-                    | b"E"
-                    | b"preprocess"
-                    | b"M"
-                    | b"MM"
-                    | b"generate-dependencies"
-                    | b"generate-nonsystem-dependencies"
-                    | b"clean"
-                    | b"clean-targets"
-            ) {
+        for arg in scan(args, classify) {
+            let arg = arg.ok()?;
+            let name = bare_option(arg.name);
+            if PASS_THROUGH.contains(&name) {
                 return None;
             }
-            if matches!(
-                name,
-                b"keep" | b"keep-dir" | b"save-temps" | b"objdir-as-tempdir" | b"objtemp"
-            ) {
-                build.keep = false;
-            }
-            build.seed &= name != b"frandom-seed";
-            build.ptx |= name == b"ptx";
-            if takes_operand(name) {
-                let value = bound.or_else(|| args.next().map(Vec::as_slice))?;
-                let path = || PathBuf::from(OsStr::from_bytes(value));
-                match name {
-                    b"o" | b"output-file" => build.output = Some(path()),
-                    b"odir" | b"output-directory" => build.output_directory = path(),
-                    b"x" => explicit_language = matches!(value, b"cu" | b"c++" | b"c"),
-                    _ => {}
+            let path = || PathBuf::from(OsStr::from_bytes(arg.value));
+            match name {
+                b"o" | b"output-file" => build.output = Some(path()),
+                b"odir" | b"output-directory" => build.output_directory = path(),
+                b"x" => explicit_language = matches!(arg.value, b"cu" | b"c++" | b"c"),
+                b"keep" | b"keep-dir" | b"save-temps" | b"objdir-as-tempdir" | b"objtemp" => {
+                    build.keep = false
                 }
-            } else if !arg.is_empty() && !arg.starts_with(b"-") {
-                inputs.push(arg);
+                b"frandom-seed" => build.seed = false,
+                b"ptx" => build.ptx = true,
+                b"" if !arg.value.is_empty() && !arg.value.starts_with(b"-") => {
+                    inputs.push(arg.value)
+                }
+                _ => {}
             }
         }
 
         let mut stems = Vec::new();
+        const SOURCE_EXTENSIONS: &[&[u8]] =
+            &[b"cu", b"c", b"cc", b"cxx", b"cpp", b"c++", b"C", b"CPP"];
         for input in inputs {
             let path = Path::new(OsStr::from_bytes(input));
             let extension = path.extension().unwrap_or_default().as_bytes();
-            if !explicit_language
-                && !matches!(
-                    extension,
-                    b"cu" | b"c" | b"cc" | b"cxx" | b"cpp" | b"c++" | b"C" | b"CPP"
-                )
-            {
+            if !explicit_language && !SOURCE_EXTENSIONS.contains(&extension) {
                 continue;
             }
             let stem = path.file_stem();
@@ -147,7 +117,7 @@ impl Compilation {
                 build.keep = false;
             }
             stems.push(stem);
-            build.sources.push(input.clone());
+            build.sources.push(input.to_vec());
         }
         // NVCC accepts one seed per invocation and requires distinct seeds
         // for different translation units.
@@ -183,19 +153,20 @@ impl Compilation {
 }
 
 fn nvcc_command(tool: &Tool, args: &[Argument]) -> Command {
-    let mut command = tool.profile_command(args);
+    let mut command = tool.command(args);
     if let Some(backend) = option_env!("NVCC_BACKEND_BIN") {
-        let mut path = OsString::from(backend);
-        if let Some(existing) = env::var_os("PATH").filter(|path| !path.is_empty()) {
-            path.push(":");
-            path.push(existing);
-        }
+        let path = env::var_os("PATH").filter(|path| !path.is_empty());
+        let path = path.map_or_else(
+            || OsString::from(backend),
+            |path| [OsStr::new(backend), &path].join(OsStr::new(":")),
+        );
         command.env("PATH", path);
     }
     command
 }
 
-fn compile(tool: Tool) -> io::Result<i32> {
+fn compile(mut tool: Tool) -> io::Result<i32> {
+    tool.use_installed_name();
     let forward = || Ok(tool.exec(nvcc_command(&tool, &tool.args)));
     let Ok(effective) = effective_arguments(&tool.args) else {
         return forward();

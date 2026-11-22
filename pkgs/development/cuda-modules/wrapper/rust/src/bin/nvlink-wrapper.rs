@@ -14,12 +14,10 @@ use cuda_tool_wrapper::{
     files::Artifact,
     process::{exit_status, wrapper_main},
 };
-use std::ffi::OsString;
 use std::io;
-use std::os::unix::ffi::OsStringExt;
 use std::process::ExitCode;
 
-fn scrub(output: &mut (impl Artifact + ?Sized)) -> io::Result<()> {
+fn scrub(output: &mut Artifact<'_>) -> io::Result<()> {
     if is_elf(output)? {
         edit_elf_sections(output, b".note.nv.tkinfo", blank_store_hashes)?;
     } else if blank_store_hashes(&mut output.read(0, output.size())?) {
@@ -35,9 +33,7 @@ fn main() -> ExitCode {
     wrapper_main("nvlink", |tool| {
         let command = tool.command(&tool.args);
         match last_output(&tool.args, |name| classify(name, OPERANDS))? {
-            Some(path) => {
-                tool.edit_output(command, OsString::from_vec(path).into(), |file| scrub(file))
-            }
+            Some(path) => tool.edit_output(command, path, scrub),
             None => Ok(exit_status(tool.run(command, None)?)),
         }
     })

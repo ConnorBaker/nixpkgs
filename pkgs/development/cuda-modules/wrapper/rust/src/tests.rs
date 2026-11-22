@@ -1,5 +1,6 @@
 use crate::arguments::{Quote, tokenize};
 use crate::artifact::{blank_store_hashes, edit_elf_sections};
+use crate::files::Artifact;
 use crate::ptx::{PathPrefixMap, normalize_source_info};
 
 #[test]
@@ -33,7 +34,7 @@ fn elf_parser_rejects_truncated_buffers() {
     header[58..60].copy_from_slice(&64u16.to_le_bytes());
     assert!(
         edit_elf_sections(
-            header.as_mut_slice(),
+            &mut Artifact::Bytes(&mut header),
             b".note.nv.tkinfo",
             blank_store_hashes
         )

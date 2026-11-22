@@ -7,7 +7,7 @@ const OPERANDS: &[&[u8]] = &[
 ];
 
 use cuda_tool_wrapper::{
-    arguments::{InputFiles, RewriteError, classify, rewrite_options},
+    arguments::{InputFiles, classify, rewrite_options},
     process::wrapper_main,
     ptx::{PathPrefixMap, rewritten_input},
 };
@@ -52,18 +52,14 @@ fn main() -> ExitCode {
         let rewritten = rewrite_options(
             &tool.args,
             |name| classify(name, OPERANDS),
-            |name, _, value, files| match name {
-                b"-ident" | b"--ident" => Ok(paths.remap(value)),
+            |arg, files| match arg.name {
+                b"-ident" | b"--ident" => Ok(paths.remap(arg.value)),
                 b"-image2" | b"--image2" | b"-image3" | b"--image3" => {
-                    remap_image(value, &paths, files)
+                    remap_image(arg.value, &paths, files)
                 }
                 _ => Ok(None),
             },
-        );
-        match rewritten {
-            Ok(Some((args, _files))) => Ok(tool.exec(tool.command(&args))),
-            Err(RewriteError::Input(error)) => Err(error),
-            _ => Ok(tool.exec(tool.command(&tool.args))),
-        }
+        )?;
+        Ok(tool.exec_rewritten(rewritten))
     })
 }

@@ -12,7 +12,7 @@ const OPERANDS: &[&[u8]] = &[
 ];
 
 use cuda_tool_wrapper::{
-    arguments::{Kind, RewriteError, classify, informational, rewrite_options},
+    arguments::{Kind, classify, informational, rewrite_options},
     process::wrapper_main,
     ptx::{PathPrefixMap, normalize_source_info, rewritten_input},
 };
@@ -29,24 +29,22 @@ fn main() -> ExitCode {
         let rewritten = rewrite_options(
             &tool.args,
             |name| classify(name, OPERANDS),
-            |name, kind, value, files| {
-                query |= informational(name);
+            |arg, files| {
+                query |= informational(arg.name);
                 if query {
                     return Ok(None);
                 }
-                if matches!(name, b"-ias" | b"--input-as-string") {
-                    return Ok(normalize_source_info(value, &paths, timestamps));
+                if matches!(arg.name, b"-ias" | b"--input-as-string") {
+                    return Ok(normalize_source_info(arg.value, &paths, timestamps));
                 }
-                if kind == Kind::Plain && !value.starts_with(b"-") {
-                    return Ok(rewritten_input(value, &paths, timestamps)?.map(|fd| files.add(fd)));
+                if arg.kind == Kind::Plain && !arg.value.starts_with(b"-") {
+                    return Ok(
+                        rewritten_input(arg.value, &paths, timestamps)?.map(|fd| files.add(fd))
+                    );
                 }
                 Ok(None)
             },
-        );
-        match rewritten {
-            Ok(Some((args, _files))) if !query => Ok(tool.exec(tool.command(&args))),
-            Err(RewriteError::Input(error)) => Err(error),
-            _ => Ok(tool.exec(tool.command(&tool.args))),
-        }
+        )?;
+        Ok(tool.exec_rewritten(rewritten.filter(|_| !query)))
     })
 }

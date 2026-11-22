@@ -1,12 +1,14 @@
 use crate::files::{anonymous_input, descriptor_path, read_regular};
-use crate::space;
+use crate::{push_quoted, space};
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io;
 use std::os::unix::ffi::OsStrExt;
+use std::path::PathBuf;
 
 pub type Argument = Vec<u8>;
 pub type Arguments = Vec<Argument>;
+type Classify = fn(&[u8]) -> Kind;
 
 #[derive(Clone, Copy)]
 pub enum Quote {
@@ -19,31 +21,34 @@ pub enum Quote {
 pub fn tokenize(text: &[u8], quotes: Quote) -> io::Result<Arguments> {
     let mut args = Vec::new();
     let mut word = None::<Argument>;
-    let (mut quoted, mut escaped) = (false, false);
-    for &byte in text {
+    let mut quoted = false;
+    let mut bytes = text.iter().copied();
+    while let Some(byte) = bytes.next() {
         match byte {
-            b'\\' if !escaped => escaped = true,
-            b'"' if !escaped => {
+            b'\\' => {
+                let escaped = bytes.next().ok_or_else(unterminated)?;
+                let word = word.get_or_insert_with(Vec::new);
+                if escaped != b'"' || matches!(quotes, Quote::Preserve) {
+                    word.push(escaped);
+                }
+            }
+            b'"' => {
                 quoted = !quoted;
                 word.get_or_insert_with(Vec::new);
             }
-            byte if !escaped && !quoted && space(byte) => args.extend(word.take()),
-            byte => {
-                let word = word.get_or_insert_with(Vec::new);
-                if byte != b'"' || matches!(quotes, Quote::Preserve) {
-                    word.push(byte);
-                }
-                escaped = false;
-            }
+            byte if !quoted && space(byte) => args.extend(word.take()),
+            byte => word.get_or_insert_with(Vec::new).push(byte),
         }
     }
-    if quoted || escaped {
-        return Err(io::Error::other(
-            "an options file ends in a backslash or a quotation",
-        ));
+    if quoted {
+        return Err(unterminated());
     }
     args.extend(word);
     Ok(args)
+}
+
+fn unterminated() -> io::Error {
+    io::Error::other("an options file ends in a backslash or a quotation")
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -54,67 +59,59 @@ pub enum Kind {
 }
 
 pub fn classify(name: &[u8], operands: &[&[u8]]) -> Kind {
-    if matches!(name, b"-optf" | b"--options-file") {
-        Kind::OptionsFile
-    } else if operands.contains(&name) {
-        Kind::Operand
-    } else {
-        Kind::Plain
+    match name {
+        b"-optf" | b"--options-file" => Kind::OptionsFile,
+        _ if operands.contains(&name) => Kind::Operand,
+        _ => Kind::Plain,
     }
-}
-
-pub fn is_output(name: &[u8]) -> bool {
-    matches!(name, b"-o" | b"--output-file")
 }
 
 pub fn informational(name: &[u8]) -> bool {
     matches!(name, b"-h" | b"--help" | b"-V" | b"--version")
 }
 
-pub fn split_option(arg: &[u8]) -> (&[u8], Option<&[u8]>) {
-    arg.iter()
-        .position(|&b| b == b'=')
-        .map_or((arg, None), |i| (&arg[..i], Some(&arg[i + 1..])))
+pub struct OptionArg<'a> {
+    pub name: &'a [u8],
+    pub value: &'a [u8],
+    pub kind: Kind,
+    words: &'a [Argument],
 }
 
-struct Item<'a> {
-    name: &'a [u8],
-    value: &'a [u8],
-    kind: Kind,
-    inline: bool,
-}
-
-fn next<'a>(
-    args: &'a [Argument],
-    index: &mut usize,
-    classify: impl Fn(&[u8]) -> Kind,
-) -> io::Result<Item<'a>> {
-    let arg = args[*index].as_slice();
-    let (name, value) = split_option(arg);
-    let kind = classify(name);
-    let inline = value.is_some();
-    let value = match (kind, value) {
-        (Kind::Plain, _) => arg,
-        (_, Some(value)) => value,
-        (_, None) => {
-            *index += 1;
-            args.get(*index).ok_or_else(|| {
-                io::Error::other(format!(
+pub fn scan(
+    mut words: &[Argument],
+    classify: Classify,
+) -> impl Iterator<Item = io::Result<OptionArg<'_>>> {
+    std::iter::from_fn(move || {
+        let word = words.first()?.as_slice();
+        let (name, inline) = match word.iter().position(|&byte| byte == b'=') {
+            Some(i) => (&word[..i], Some(&word[i + 1..])),
+            None => (word, None),
+        };
+        let kind = classify(name);
+        let (value, count) = match (kind, inline) {
+            (Kind::Plain, _) => (word, 1),
+            (_, Some(value)) => (value, 1),
+            (_, None) if words.len() > 1 => (words[1].as_slice(), 2),
+            _ => {
+                words = &[];
+                return Some(Err(io::Error::other(format!(
                     "{} is missing its value",
                     OsStr::from_bytes(name).to_string_lossy()
-                ))
-            })?
-        }
-    };
-    Ok(Item {
-        name,
-        value,
-        kind,
-        inline,
+                ))));
+            }
+        };
+        let (original, rest) = words.split_at(count);
+        words = rest;
+        Some(Ok(OptionArg {
+            name,
+            value,
+            kind,
+            words: original,
+        }))
     })
 }
 
-fn depth_limit(depth: u8) -> io::Result<()> {
+fn check_depth(depth: u8) -> io::Result<()> {
     if depth == 16 {
         return Err(io::Error::other("options files are nested too deeply"));
     }
@@ -125,61 +122,66 @@ fn read_options(path: &[u8], quotes: Quote, remaining: &mut usize) -> io::Result
     tokenize(&read_regular(OsStr::from_bytes(path), remaining)?, quotes)
 }
 
-pub fn expand(
-    args: &[Argument],
-    classify: impl Fn(&[u8]) -> Kind,
+struct Options {
+    classify: Classify,
     quotes: Quote,
-    mut remaining: usize,
-) -> io::Result<Arguments> {
-    fn append(
-        output: &mut Arguments,
+    remaining: usize,
+}
+
+impl Options {
+    fn visit(
+        &mut self,
         args: &[Argument],
-        classify: &impl Fn(&[u8]) -> Kind,
-        quotes: Quote,
-        remaining: &mut usize,
         depth: u8,
+        visit: &mut impl FnMut(OptionArg<'_>),
     ) -> io::Result<()> {
-        depth_limit(depth)?;
-        let mut index = 0;
-        while index < args.len() {
-            let start = index;
-            let item = next(args, &mut index, classify)?;
-            if item.kind == Kind::OptionsFile {
-                for path in item.value.split(|&b| b == b',').filter(|p| !p.is_empty()) {
-                    let file = read_options(path, quotes, remaining)?;
-                    append(output, &file, classify, quotes, remaining, depth + 1)?;
+        check_depth(depth)?;
+        for arg in scan(args, self.classify) {
+            let arg = arg?;
+            if arg.kind == Kind::OptionsFile {
+                for path in arg.value.split(|&b| b == b',').filter(|p| !p.is_empty()) {
+                    let nested = read_options(path, self.quotes, &mut self.remaining)?;
+                    self.visit(&nested, depth + 1, visit)?;
                 }
             } else {
-                output.extend_from_slice(&args[start..=index]);
+                visit(arg);
             }
-            index += 1;
         }
         Ok(())
     }
+}
 
+pub fn expand(
+    args: &[Argument],
+    classify: Classify,
+    quotes: Quote,
+    remaining: usize,
+) -> io::Result<Arguments> {
     let mut output = Vec::new();
-    append(&mut output, args, &classify, quotes, &mut remaining, 0)?;
+    Options {
+        classify,
+        quotes,
+        remaining,
+    }
+    .visit(args, 0, &mut |arg| output.extend_from_slice(arg.words))?;
     Ok(output)
 }
 
-pub fn last_output(
-    args: &[Argument],
-    classify: impl Fn(&[u8]) -> Kind,
-) -> io::Result<Option<Argument>> {
-    let args = expand(args, &classify, Quote::Discard, usize::MAX)?;
-    let mut index = 0;
+pub fn last_output(args: &[Argument], classify: Classify) -> io::Result<Option<PathBuf>> {
     let mut output = None;
-    while index < args.len() {
-        let item = next(&args, &mut index, &classify)?;
-        if informational(item.name) {
-            return Ok(None);
-        }
-        if is_output(item.name) {
-            output = Some(item.value.to_vec());
-        }
-        index += 1;
+    let mut query = false;
+    Options {
+        classify,
+        quotes: Quote::Discard,
+        remaining: usize::MAX,
     }
-    Ok(output)
+    .visit(args, 0, &mut |arg| {
+        query |= informational(arg.name);
+        if matches!(arg.name, b"-o" | b"--output-file") {
+            output = Some(PathBuf::from(OsStr::from_bytes(arg.value)));
+        }
+    })?;
+    Ok(if query { None } else { output })
 }
 
 #[derive(Default)]
@@ -187,104 +189,112 @@ pub struct InputFiles(Vec<File>);
 
 impl InputFiles {
     pub fn add(&mut self, file: File) -> Argument {
-        let path = descriptor_path(&file);
+        let path = descriptor_path(&file).into_bytes();
         self.0.push(file);
         path
     }
 }
 
-fn encode(args: &[Argument]) -> Argument {
-    let mut text = Vec::new();
-    for arg in args {
-        text.push(b'"');
-        for &byte in arg {
-            if matches!(byte, b'\\' | b'"') {
-                text.push(b'\\');
-            }
-            text.push(byte);
-        }
-        text.extend_from_slice(b"\"\n");
-    }
-    text
-}
-
-pub enum RewriteError {
+enum RewriteError {
     Inspect,
     Input(io::Error),
 }
 
-// Keep the original position and nesting of options files. Large options
-// files need to stay out of argv to avoid the kernel's argument size limit.
-pub fn rewrite_options(
-    args: &[Argument],
-    classify: impl Fn(&[u8]) -> Kind,
-    mut rewrite: impl FnMut(&[u8], Kind, &[u8], &mut InputFiles) -> io::Result<Option<Argument>>,
-) -> Result<Option<(Arguments, InputFiles)>, RewriteError> {
-    type RewriteResult<T> = Result<T, RewriteError>;
-    fn rewrite_list(
-        args: &mut [Argument],
-        classify: &impl Fn(&[u8]) -> Kind,
-        rewrite: &mut impl FnMut(&[u8], Kind, &[u8], &mut InputFiles) -> io::Result<Option<Argument>>,
-        files: &mut InputFiles,
-        remaining: &mut usize,
-        depth: u8,
-    ) -> RewriteResult<bool> {
-        depth_limit(depth).map_err(|_| RewriteError::Inspect)?;
+type RewriteResult<T> = Result<T, RewriteError>;
+type RewriteInput = io::Result<Option<Argument>>;
+
+pub struct RewrittenArgs {
+    pub args: Arguments,
+    // Keep the anonymous inputs available through exec.
+    _files: InputFiles,
+}
+
+struct Rewriter<F> {
+    classify: Classify,
+    rewrite: F,
+    remaining: usize,
+    files: InputFiles,
+}
+
+impl<F: FnMut(OptionArg<'_>, &mut InputFiles) -> RewriteInput> Rewriter<F> {
+    // Keep rewritten options in files. Moving them to argv would introduce
+    // the kernel's argument size limit and could change option precedence.
+    fn list(&mut self, args: &[Argument], depth: u8) -> RewriteResult<Option<Arguments>> {
+        check_depth(depth).map_err(|_| RewriteError::Inspect)?;
+        let mut output = Vec::new();
         let mut changed = false;
-        let mut index = 0;
-        while index < args.len() {
-            let item = next(args, &mut index, classify).map_err(|_| RewriteError::Inspect)?;
-            let replacement = if item.kind == Kind::OptionsFile {
-                let mut paths = Vec::new();
-                let mut updated = false;
-                for (i, path) in item.value.split(|&b| b == b',').enumerate() {
-                    if i > 0 {
-                        paths.push(b',');
-                    }
-                    if path.is_empty() {
-                        continue;
-                    }
-                    let mut nested = read_options(path, Quote::Discard, remaining)
-                        .map_err(|_| RewriteError::Inspect)?;
-                    if rewrite_list(&mut nested, classify, rewrite, files, remaining, depth + 1)? {
-                        let file = anonymous_input(c"cuda-options", &encode(&nested))
-                            .map_err(RewriteError::Input)?;
-                        paths.extend(files.add(file));
-                        updated = true;
-                    } else {
-                        paths.extend_from_slice(path);
-                    }
-                }
-                updated.then_some(paths)
+        for arg in scan(args, self.classify) {
+            let arg = arg.map_err(|_| RewriteError::Inspect)?;
+            let words = arg.words;
+            let name = arg.name;
+            let inline = arg.kind != Kind::Plain && words.len() == 1;
+            let replacement = if arg.kind == Kind::OptionsFile {
+                self.file_list(arg.value, depth + 1)?
             } else {
-                rewrite(item.name, item.kind, item.value, files).map_err(RewriteError::Input)?
+                (self.rewrite)(arg, &mut self.files).map_err(RewriteError::Input)?
             };
-            // These tools discard escaped double quotes in options files.
+            // Escaped double quotes do not survive these options files.
             if let Some(replacement) = replacement.filter(|r| depth == 0 || !r.contains(&b'"')) {
-                args[index] = if item.kind != Kind::Plain && item.inline {
-                    [item.name, b"=", &replacement].concat()
+                output.extend_from_slice(&words[..words.len() - 1]);
+                output.push(if inline {
+                    [name, b"=", &replacement].concat()
                 } else {
                     replacement
-                };
+                });
                 changed = true;
+            } else {
+                output.extend_from_slice(words);
             }
-            index += 1;
         }
-        Ok(changed)
+        Ok(changed.then_some(output))
     }
 
-    let mut args = args.to_vec();
-    let mut files = InputFiles::default();
-    let mut remaining = usize::MAX;
-    if rewrite_list(
-        &mut args,
-        &classify,
-        &mut rewrite,
-        &mut files,
-        &mut remaining,
-        0,
-    )? {
-        return Ok(Some((args, files)));
+    fn file_list(&mut self, value: &[u8], depth: u8) -> RewriteResult<Option<Argument>> {
+        let mut paths = Vec::new();
+        let mut changed = false;
+        for (index, path) in value.split(|&b| b == b',').enumerate() {
+            if index != 0 {
+                paths.push(b',');
+            }
+            if path.is_empty() {
+                continue;
+            }
+            let args = read_options(path, Quote::Discard, &mut self.remaining)
+                .map_err(|_| RewriteError::Inspect)?;
+            if let Some(rewritten) = self.list(&args, depth)? {
+                let mut text = Vec::new();
+                for word in rewritten {
+                    push_quoted(&mut text, &word);
+                    text.push(b'\n');
+                }
+                let file = anonymous_input(c"cuda-options", &text).map_err(RewriteError::Input)?;
+                paths.extend(self.files.add(file));
+                changed = true;
+            } else {
+                paths.extend_from_slice(path);
+            }
+        }
+        Ok(changed.then_some(paths))
     }
-    Ok(None)
+}
+
+pub fn rewrite_options(
+    args: &[Argument],
+    classify: Classify,
+    rewrite: impl FnMut(OptionArg<'_>, &mut InputFiles) -> RewriteInput,
+) -> io::Result<Option<RewrittenArgs>> {
+    let mut rewriter = Rewriter {
+        classify,
+        rewrite,
+        remaining: usize::MAX,
+        files: InputFiles::default(),
+    };
+    match rewriter.list(args, 0) {
+        Ok(Some(args)) => Ok(Some(RewrittenArgs {
+            args,
+            _files: rewriter.files,
+        })),
+        Ok(None) | Err(RewriteError::Inspect) => Ok(None),
+        Err(RewriteError::Input(error)) => Err(error),
+    }
 }

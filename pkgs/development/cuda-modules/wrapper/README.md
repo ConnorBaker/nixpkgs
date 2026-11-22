@@ -3,7 +3,8 @@
 This Rust library provides the Linux process and file handling used by CUDA wrappers. A wrapper can
 give the vendor tool reproducible inputs or edit metadata in an artifact it produces. CUDA packages opt in per
 executable at build time by installing an adapter at the executable's public path. There is no runtime registry.
-The library is compiled into each adapter.
+Nixpkgs' static Rust toolchain links the library and musl into each adapter. The vendor executable runs with
+its own runtime.
 
 ## Invocation semantics
 
@@ -52,8 +53,8 @@ The library is compiled into each adapter.
 - [`scratch`](./rust/src/scratch.rs) provides stable identifiers and locked scratch directories. Pass the
   directory lease to `Tool::run` so the compiler can hold the lock across `exec`.
 - [`files`](./rust/src/files.rs) provides anonymous inputs and bounded access to artifact bytes. `GeneratedFile`
-  checks that the vendor rewrote the intended file. The `Artifact` trait also supports a mutable byte slice
-  for in-process compiler and linker results.
+  checks that the vendor rewrote the intended file. `Artifact::Bytes` gives in-process compiler and linker
+  results the same interface.
 - [`artifact`](./rust/src/artifact.rs) edits named ELF64 sections and normalizes regular `ar` member timestamps
   while preserving offsets. Apply `blank_store_hashes` to metadata verified to carry incidental references.
   For example, `nvlink` applies it to `.note.nv.tkinfo`.
@@ -118,9 +119,10 @@ installed paths. Rust callers can apply the artifact helpers directly to the ret
 
 ```rust
 use cuda_tool_wrapper::artifact::{blank_store_hashes, edit_elf_sections};
+use cuda_tool_wrapper::files::Artifact;
 use std::io;
 
 fn clean_cubin(cubin: &mut [u8]) -> io::Result<bool> {
-    edit_elf_sections(cubin, b".note.nv.tkinfo", blank_store_hashes)
+    edit_elf_sections(&mut Artifact::Bytes(cubin), b".note.nv.tkinfo", blank_store_hashes)
 }
 ```

@@ -1,10 +1,9 @@
 use crate::files::{anonymous_input, read_regular};
-use crate::space;
+use crate::{push_quoted, space};
 use std::env;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io;
-use std::ops::Range;
 use std::os::unix::ffi::OsStrExt;
 
 #[derive(Default)]
@@ -74,21 +73,11 @@ fn decode(encoded: &[u8]) -> Option<Vec<u8>> {
 }
 
 fn integer_literal(value: &[u8]) -> Option<u64> {
-    let value = value.strip_suffix(b"U").unwrap_or(value);
-    let (radix, digits) = if let Some(digits) = value
-        .strip_prefix(b"0x")
-        .or_else(|| value.strip_prefix(b"0X"))
-    {
-        (16, digits)
-    } else if let Some(digits) = value
-        .strip_prefix(b"0b")
-        .or_else(|| value.strip_prefix(b"0B"))
-    {
-        (2, digits)
-    } else if value.starts_with(b"0") {
-        (8, value)
-    } else {
-        (10, value)
+    let (digits, radix) = match value.strip_suffix(b"U").unwrap_or(value) {
+        [b'0', b'x' | b'X', digits @ ..] => (digits, 16),
+        [b'0', b'b' | b'B', digits @ ..] => (digits, 2),
+        digits @ [b'0', ..] => (digits, 8),
+        digits => (digits, 10),
     };
     if !digits.first().is_some_and(u8::is_ascii_hexdigit) {
         return None;
@@ -100,44 +89,39 @@ fn identifier(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || b"._$%".contains(&byte)
 }
 
-// Return token offsets so replacements can preserve all unrelated bytes.
-fn token(bytes: &[u8], cursor: &mut usize) -> Option<Range<usize>> {
+fn token<'a>(input: &mut &'a [u8]) -> &'a [u8] {
     loop {
-        let input = bytes.get(*cursor..)?;
-        let &byte = input.first()?;
-        if space(byte) {
-            *cursor += 1;
-        } else if input.starts_with(b"//") {
-            *cursor += input
-                .iter()
-                .position(|&b| b == b'\n')
-                .unwrap_or(input.len());
-        } else if input.starts_with(b"/*") {
-            *cursor += input[2..]
-                .windows(2)
-                .position(|pair| pair == b"*/")
-                .map_or(input.len(), |index| index + 4);
-        } else {
-            let start = *cursor;
-            *cursor += 1;
-            if byte == b'"' {
-                while let Some(&byte) = bytes.get(*cursor) {
-                    *cursor += 1;
-                    if byte == b'"' {
-                        break;
-                    }
-                    if byte == b'\\' && *cursor < bytes.len() {
-                        *cursor += 1;
-                    }
-                }
-            } else if identifier(byte) {
-                while bytes.get(*cursor).is_some_and(|&b| identifier(b)) {
-                    *cursor += 1;
-                }
+        let size = input.len();
+        match *input {
+            [] => return b"",
+            [b'/', b'/', ..] => {
+                let end = input.iter().position(|&byte| byte == b'\n').unwrap_or(size);
+                *input = &input[end..];
             }
-            return Some(start..*cursor);
+            [b'/', b'*', tail @ ..] => {
+                let end = tail.windows(2).position(|part| part == b"*/");
+                *input = &input[end.map_or(size, |index| index + 4)..];
+            }
+            [byte, tail @ ..] if space(*byte) => *input = tail,
+            _ => break,
         }
     }
+    let size = if input[0] == b'"' {
+        let mut escaped = false;
+        let end = input[1..].iter().position(|&byte| {
+            let close = !escaped && byte == b'"';
+            escaped = !escaped && byte == b'\\';
+            close
+        });
+        end.map_or(input.len(), |index| index + 2)
+    } else if identifier(input[0]) {
+        input.iter().take_while(|&&byte| identifier(byte)).count()
+    } else {
+        1
+    };
+    let (word, rest) = input.split_at(size);
+    *input = rest;
+    word
 }
 
 pub fn normalize_source_info(
@@ -145,70 +129,54 @@ pub fn normalize_source_info(
     paths: &PathPrefixMap,
     normalize_timestamp: bool,
 ) -> Option<Vec<u8>> {
-    let mut cursor = 0;
-    if &ptx[token(ptx, &mut cursor)?] != b".version" {
+    let mut input = ptx;
+    if token(&mut input) != b".version" {
         return None;
     }
     let mut result = Vec::new();
     let mut copied = 0;
-    while let Some(current) = token(ptx, &mut cursor) {
-        if &ptx[current] != b".file" {
+    while !input.is_empty() {
+        if token(&mut input) != b".file" {
             continue;
         }
-        let Some(index) = token(ptx, &mut cursor) else {
-            break;
-        };
-        let Some(filename) = token(ptx, &mut cursor) else {
-            break;
-        };
-        let spelling = &ptx[filename.clone()];
-        let Some(path) = spelling
-            .strip_prefix(b"\"")
-            .and_then(|s| s.strip_suffix(b"\""))
-        else {
+        let index = token(&mut input);
+        let spelling = token(&mut input);
+        let [b'"', path @ .., b'"'] = spelling else {
             continue;
         };
-        if integer_literal(&ptx[index]).is_none() {
+        if integer_literal(index).is_none() {
             continue;
         }
-        let mut following = cursor;
-        let metadata = token(ptx, &mut following).is_some_and(|range| &ptx[range] == b",");
-        let add_timestamp = normalize_timestamp && !metadata;
-        let replace_timestamp = if normalize_timestamp && metadata {
-            token(ptx, &mut following).filter(|range| {
-                integer_literal(&ptx[range.clone()]) == Some(0)
-                    && token(ptx, &mut following).is_some_and(|range| &ptx[range] == b",")
-            })
-        } else {
-            None
-        };
-        let mapped = if path.contains(&b'\\') {
-            None
-        } else {
-            paths.remap(path)
-        };
-        if !add_timestamp && replace_timestamp.is_none() && mapped.is_none() {
-            continue;
-        }
-        result.extend_from_slice(&ptx[copied..filename.start]);
-        if let Some(mapped) = mapped {
-            result.push(b'"');
-            for byte in mapped {
-                if matches!(byte, b'"' | b'\\') {
-                    result.push(b'\\');
-                }
-                result.push(byte);
+
+        let filename_end = ptx.len() - input.len();
+        let mapped = (!path.contains(&b'\\'))
+            .then(|| paths.remap(path))
+            .flatten();
+        let mut following = input;
+        let add_timestamp = normalize_timestamp && token(&mut following) != b",";
+        let mut timestamp = None;
+        if normalize_timestamp && !add_timestamp {
+            let value = token(&mut following);
+            let end = ptx.len() - following.len();
+            if integer_literal(value) == Some(0) && token(&mut following) == b"," {
+                timestamp = Some(end - value.len()..end);
             }
-            result.push(b'"');
+        }
+        if mapped.is_none() && !add_timestamp && timestamp.is_none() {
+            continue;
+        }
+        result.extend_from_slice(&ptx[copied..filename_end - spelling.len()]);
+        if let Some(mapped) = mapped {
+            push_quoted(&mut result, &mapped);
         } else {
             result.extend_from_slice(spelling);
         }
+        copied = filename_end;
         // A nonzero timestamp tells ptxas to use both fields as written.
         if add_timestamp {
             result.extend_from_slice(b", 1, 0");
         }
-        copied = filename.end;
-        if let Some(timestamp) = replace_timestamp {
+        if let Some(timestamp) = timestamp {
             result.extend_from_slice(&ptx[copied..timestamp.start]);
             result.push(b'1');
             copied = timestamp.end;

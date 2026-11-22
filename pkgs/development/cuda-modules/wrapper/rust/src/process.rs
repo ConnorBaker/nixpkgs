@@ -1,5 +1,6 @@
-use crate::arguments::{Argument, Arguments};
-use crate::files::{Contents, GeneratedFile};
+use crate::arguments::{Argument, Arguments, RewrittenArgs};
+use crate::files::{Artifact, GeneratedFile};
+use libc::{SIGCHLD, SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
@@ -36,7 +37,6 @@ pub struct Tool {
     name: &'static str,
     pub args: Arguments,
     argv0: OsString,
-    public: PathBuf,
     vendor: PathBuf,
 }
 
@@ -49,7 +49,6 @@ impl Tool {
             name,
             args: args.map(OsStringExt::into_vec).collect(),
             argv0,
-            public: executable.with_file_name(name),
             vendor: executable.with_file_name(format!(".{name}-wrapped")),
         })
     }
@@ -76,10 +75,8 @@ impl Tool {
         command
     }
 
-    pub fn profile_command(&self, args: &[Argument]) -> Command {
-        let mut command = self.command(args);
-        command.arg0(&self.public);
-        command
+    pub fn use_installed_name(&mut self) {
+        self.argv0 = self.vendor.with_file_name(self.name).into_os_string();
     }
 
     fn launch_failed(&self, error: io::Error) -> i32 {
@@ -95,15 +92,76 @@ impl Tool {
         self.launch_failed(command.exec())
     }
 
-    pub fn run(&self, command: Command, lease: Option<&File>) -> io::Result<ExitStatus> {
-        run(command, lease, |error| self.launch_failed(error))
+    pub fn exec_rewritten(&self, rewritten: Option<RewrittenArgs>) -> i32 {
+        let args = rewritten.as_ref().map_or(&self.args, |result| &result.args);
+        self.exec(self.command(args))
+    }
+
+    pub fn run(&self, mut command: Command, lease: Option<&File>) -> io::Result<ExitStatus> {
+        let mask = SignalMask::block()?;
+        let foreground = in_foreground();
+        if !foreground {
+            command.process_group(0);
+        }
+        let original = mask.original;
+        let parent = std::process::id() as libc::pid_t;
+        let lease = lease.map(AsRawFd::as_raw_fd);
+        // SAFETY: the closure uses only async-signal-safe system calls and
+        // constructs errors from errno. Captured descriptors stay open until spawn returns.
+        unsafe {
+            command.pre_exec(move || {
+                check(libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL))?;
+                if libc::getppid() != parent {
+                    libc::_exit(127);
+                }
+                if let Some(lease) = lease {
+                    // Keep the open file description alive without using stdio.
+                    check(libc::fcntl(lease, libc::F_DUPFD, libc::STDERR_FILENO + 1))?;
+                }
+                check(libc::sigprocmask(
+                    libc::SIG_SETMASK,
+                    &original,
+                    std::ptr::null_mut(),
+                ))
+            });
+        }
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                return Ok(ExitStatus::from_raw(self.launch_failed(error) << 8));
+            }
+        };
+        let pid = child.id() as libc::pid_t;
+        loop {
+            if let Some(status) = child.try_wait()? {
+                return Ok(status);
+            }
+            let mut info = MaybeUninit::<libc::siginfo_t>::zeroed();
+            // SAFETY: the signal set is blocked and sigwaitinfo initializes info
+            // on success. The child is in its requested process group after spawn.
+            unsafe {
+                let signal = libc::sigwaitinfo(&mask.watched, info.as_mut_ptr());
+                if signal < 0 {
+                    let error = io::Error::last_os_error();
+                    if error.kind() == io::ErrorKind::Interrupted {
+                        continue;
+                    }
+                    return Err(error);
+                }
+                if signal != SIGCHLD
+                    && (!foreground || info.assume_init().si_code != libc::SI_KERNEL)
+                {
+                    libc::kill(if foreground { pid } else { -pid }, signal);
+                }
+            }
+        }
     }
 
     pub fn edit_output(
         &self,
         command: Command,
         output: PathBuf,
-        edit: impl FnOnce(&mut Contents) -> io::Result<()>,
+        edit: impl FnOnce(&mut Artifact<'_>) -> io::Result<()>,
     ) -> io::Result<i32> {
         let output = GeneratedFile::new(output)?;
         let status = exit_status(self.run(command, None)?);
@@ -131,37 +189,20 @@ struct SignalMask {
 
 impl SignalMask {
     fn block() -> io::Result<Self> {
-        let mut watched = MaybeUninit::zeroed();
-        // Linux writes the kernel's signal mask, which can be smaller than sigset_t.
-        let mut original = MaybeUninit::zeroed();
-        // SAFETY: libc initializes the sets. The signal names are valid, and
-        // the wrapper uses the default SIGCHLD disposition to collect status.
+        // SAFETY: All-zero sigset_t storage is valid for both libc targets.
+        // Zero original before the kernel writes its (possibly smaller) mask.
         unsafe {
-            if libc::signal(libc::SIGCHLD, libc::SIG_DFL) == libc::SIG_ERR {
+            if libc::signal(SIGCHLD, libc::SIG_DFL) == libc::SIG_ERR {
                 return Err(io::Error::last_os_error());
             }
-            libc::sigemptyset(watched.as_mut_ptr());
-            let mut watched = watched.assume_init();
-            for signal in [
-                libc::SIGHUP,
-                libc::SIGINT,
-                libc::SIGQUIT,
-                libc::SIGTERM,
-                libc::SIGUSR1,
-                libc::SIGUSR2,
-                libc::SIGCHLD,
-            ] {
+            let mut watched = std::mem::zeroed();
+            let mut original = std::mem::zeroed();
+            libc::sigemptyset(&mut watched);
+            for signal in [SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2, SIGCHLD] {
                 libc::sigaddset(&mut watched, signal);
             }
-            check(libc::sigprocmask(
-                libc::SIG_BLOCK,
-                &watched,
-                original.as_mut_ptr(),
-            ))?;
-            Ok(Self {
-                watched,
-                original: original.assume_init(),
-            })
+            check(libc::sigprocmask(libc::SIG_BLOCK, &watched, &mut original))?;
+            Ok(Self { watched, original })
         }
     }
 }
@@ -188,72 +229,6 @@ fn in_foreground() -> bool {
         .open("/dev/tty")
         // SAFETY: the open file descriptor stays valid for the call.
         .is_ok_and(|tty| unsafe { libc::tcgetpgrp(tty.as_raw_fd()) == libc::getpgrp() })
-}
-
-fn run(
-    mut command: Command,
-    lease: Option<&File>,
-    launch_error: impl FnOnce(io::Error) -> i32,
-) -> io::Result<ExitStatus> {
-    let mask = SignalMask::block()?;
-    let foreground = in_foreground();
-    if !foreground {
-        command.process_group(0);
-    }
-    let original = mask.original;
-    let parent = std::process::id() as libc::pid_t;
-    let lease = lease.map(AsRawFd::as_raw_fd);
-    // SAFETY: the closure uses only async-signal-safe system calls and
-    // constructs errors from errno. Captured descriptors stay open until spawn returns.
-    unsafe {
-        command.pre_exec(move || {
-            check(libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL))?;
-            if libc::getppid() != parent {
-                libc::_exit(127);
-            }
-            if let Some(lease) = lease {
-                // Keep the open file description alive without using stdio.
-                check(libc::fcntl(lease, libc::F_DUPFD, libc::STDERR_FILENO + 1))?;
-            }
-            check(libc::sigprocmask(
-                libc::SIG_SETMASK,
-                &original,
-                std::ptr::null_mut(),
-            ))
-        });
-    }
-    let mut child = match command.spawn() {
-        Ok(child) => child,
-        Err(error) => {
-            return Ok(ExitStatus::from_raw(launch_error(error) << 8));
-        }
-    };
-    let pid = child.id() as libc::pid_t;
-    loop {
-        if let Some(status) = child.try_wait()? {
-            return Ok(status);
-        }
-        let mut info = MaybeUninit::<libc::siginfo_t>::zeroed();
-        // SAFETY: the signal set is blocked and sigwaitinfo initializes info
-        // on success. The child is in its requested process group after spawn.
-        unsafe {
-            let signal = libc::sigwaitinfo(&mask.watched, info.as_mut_ptr());
-            if signal < 0 {
-                let error = io::Error::last_os_error();
-                if error.kind() == io::ErrorKind::Interrupted {
-                    continue;
-                }
-                return Err(error);
-            }
-            if signal != libc::SIGCHLD {
-                if !foreground {
-                    libc::kill(-pid, signal);
-                } else if info.assume_init().si_code != libc::SI_KERNEL {
-                    libc::kill(pid, signal);
-                }
-            }
-        }
-    }
 }
 
 pub fn exit_status(status: ExitStatus) -> i32 {

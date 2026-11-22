@@ -1,13 +1,13 @@
 {
   lib,
-  rustPlatform,
+  pkgsStatic,
 }:
 {
   name,
   description,
   env ? { },
 }:
-rustPlatform.buildRustPackage {
+pkgsStatic.rustPlatform.buildRustPackage {
   inherit name env;
 
   src = ./rust;

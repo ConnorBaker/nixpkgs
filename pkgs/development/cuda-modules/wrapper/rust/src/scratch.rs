@@ -1,9 +1,8 @@
 use crate::arguments::Argument;
 use crate::files::{descriptor_path, same_file};
-use std::ffi::OsString;
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io;
-use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
@@ -33,7 +32,7 @@ fn open_directory(path: &Path) -> io::Result<File> {
 }
 
 fn descriptor_directory(dir: &File) -> PathBuf {
-    PathBuf::from(OsString::from_vec(descriptor_path(dir)))
+    PathBuf::from(descriptor_path(dir))
 }
 
 impl ScratchDirectory {
@@ -58,7 +57,7 @@ impl ScratchDirectory {
             dir.lock().ok()?;
             match fs::symlink_metadata(&path) {
                 Ok(current) if same_file(&current, &opened) => {
-                    Self::prepare(&descriptor_directory(&dir), uid).ok()?;
+                    Self::prepare(&descriptor_directory(&dir), uid)?;
                     return Some(Self {
                         path,
                         lease: Some(dir),
@@ -71,40 +70,35 @@ impl ScratchDirectory {
         }
     }
 
-    fn prepare(dir: &Path, uid: u32) -> io::Result<()> {
+    fn prepare(dir: &Path, uid: u32) -> Option<()> {
         let marker = dir.join(MARKER);
-        match fs::symlink_metadata(&marker) {
+        let mut entries = fs::read_dir(dir).ok()?;
+        match marker.symlink_metadata() {
             Ok(info)
                 if info.is_file() && info.uid() == uid && info.nlink() == 1 && info.len() == 0 =>
             {
-                for entry in fs::read_dir(dir)? {
-                    let entry = entry?;
-                    if entry.file_name() == MARKER {
-                        continue;
-                    }
-                    if entry.file_type()?.is_dir() {
-                        fs::remove_dir_all(entry.path())?;
-                    } else {
-                        fs::remove_file(entry.path())?;
+                for entry in entries {
+                    let entry = entry.ok()?;
+                    if entry.file_name() != MARKER {
+                        if entry.file_type().ok()?.is_dir() {
+                            fs::remove_dir_all(entry.path()).ok()?;
+                        } else {
+                            fs::remove_file(entry.path()).ok()?;
+                        }
                     }
                 }
-                Ok(())
             }
-            Err(error)
-                if error.kind() == io::ErrorKind::NotFound
-                    && fs::read_dir(dir)?.next().is_none() =>
-            {
+            Err(error) if error.kind() == io::ErrorKind::NotFound && entries.next().is_none() => {
                 OpenOptions::new()
                     .write(true)
                     .mode(0o600)
                     .create_new(true)
-                    .open(marker)?;
-                Ok(())
+                    .open(marker)
+                    .ok()?;
             }
-            _ => Err(io::Error::other(
-                "scratch directory is not owned by the nvcc wrapper",
-            )),
+            _ => return None,
         }
+        Some(())
     }
 
     pub fn path(&self) -> &Path {

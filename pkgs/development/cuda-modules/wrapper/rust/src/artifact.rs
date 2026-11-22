@@ -22,14 +22,14 @@ pub fn blank_store_hashes(bytes: &mut [u8]) -> bool {
     changed
 }
 
-pub fn is_elf(output: &(impl Artifact + ?Sized)) -> io::Result<bool> {
+pub fn is_elf(output: &Artifact<'_>) -> io::Result<bool> {
     Ok(output.size() >= 4 && output.read(0, 4)? == b"\x7fELF")
 }
 
 // Update named sections in place and preserve their layout and size. Both
 // supported CUDA hosts use ELF64 little-endian objects.
 pub fn edit_elf_sections(
-    output: &mut (impl Artifact + ?Sized),
+    output: &mut Artifact<'_>,
     name: &[u8],
     mut update: impl FnMut(&mut [u8]) -> bool,
 ) -> io::Result<bool> {
@@ -90,7 +90,7 @@ fn little_endian(bytes: &[u8]) -> u64 {
     u64::from_le_bytes(word)
 }
 
-pub fn normalize_archive_dates(output: &mut impl Artifact) -> io::Result<()> {
+pub fn normalize_archive_dates(output: &mut Artifact<'_>) -> io::Result<()> {
     const MAGIC: &[u8] = b"!<arch>\n";
     const HEADER_SIZE: u64 = 60;
     const DATE: &[u8; 12] = b"0           ";
