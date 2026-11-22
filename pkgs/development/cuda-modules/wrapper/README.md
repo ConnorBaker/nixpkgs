@@ -9,11 +9,11 @@ Nixpkgs' static toolchain links the library and musl into each adapter. The vend
 
 - The wrapper resolves its own installed path through `/proc/self/exe` and launches the vendor executable
   `.<tool>-wrapped` beside it. `nvcc` uses its installed public path as `argv[0]` to find its toolkit profile.
+  The vendor inherits closed standard descriptors and the caller's `SIGCHLD` and `SIGPIPE` dispositions.
 - Input adapters preserve argument order and explicit settings within each tool's policy. For `ptxas` and
   `fatbinary`, a changed options file is replayed at the same position through an anonymous file descriptor.
-  Nested files retain their boundaries, and large operands stay in files. Anonymous inputs use descriptors
-  above standard input, output, and error, so the vendor inherits the caller's standard descriptors. If
-  either adapter cannot inspect the options files, it invokes the vendor with the caller's arguments.
+  Nested files retain their boundaries, and large operands stay in files. If either adapter cannot inspect
+  the options files, it invokes the vendor with the caller's arguments.
 - When an adapter needs to wait, the vendor's error exit or termination signal takes precedence over artifact edits.
   In a background build the wrapper forwards catchable cancellation signals to the vendor's process group.
   In the foreground, terminal signals reach the shared group directly. The wrapper forwards signals sent to its

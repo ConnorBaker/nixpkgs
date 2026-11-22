@@ -54,11 +54,16 @@ inline std::string_view token(std::string_view &input) {
     if (input.empty()) return {};
     std::size_t end = 1;
     if (input.front() == '"') {
-        while (end < input.size()) {
-            const auto c = input[end++];
-            if (c == '"') break;
-            if (c == '\\' && end < input.size()) ++end;
+        bool escaped = false;
+        for (; end < input.size(); ++end) {
+            if (!escaped && input[end] == '"') break;
+            escaped = !escaped && input[end] == '\\';
         }
+        if (end == input.size()) {
+            input = {};
+            return {};
+        }
+        ++end;
     } else if (identifier(input.front())) {
         while (end < input.size() && identifier(input[end])) ++end;
     }

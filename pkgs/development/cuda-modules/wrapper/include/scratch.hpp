@@ -13,18 +13,24 @@ namespace fs = std::filesystem;
 
 // FNV-1a with NUL separators. The offset, multiplier and byte order are fixed
 // so names don't depend on the wrapper's C++ library or host architecture.
-inline std::string stableId(std::string_view cwd, std::span<const std::string> args) {
-    std::uint64_t hash = 14695981039346656037ULL;
-    const auto add = [&](std::string_view value) {
-        for (unsigned char c : value) hash = (hash ^ c) * 1099511628211ULL;
-        hash *= 1099511628211ULL;
-    };
-    add(cwd);
-    for (const auto &arg : args) add(arg);
-    char digits[16];
-    const auto end = std::to_chars(digits, digits + sizeof(digits), hash, 16).ptr;
-    return std::string(digits + sizeof(digits) - end, '0').append(digits, end);
-}
+class StableId {
+  public:
+    explicit StableId(std::string_view cwd) { add(cwd); }
+
+    void add(std::string_view value) {
+        for (unsigned char c : value) hash_ = (hash_ ^ c) * 1099511628211ULL;
+        hash_ *= 1099511628211ULL;
+    }
+
+    std::string finish() const {
+        char digits[16];
+        const auto end = std::to_chars(digits, digits + sizeof(digits), hash_, 16).ptr;
+        return std::string(digits + sizeof(digits) - end, '0').append(digits, end);
+    }
+
+  private:
+    std::uint64_t hash_ = 14695981039346656037ULL;
+};
 
 class ScratchDirectory {
   public:

@@ -17,68 +17,45 @@ def main():
         driver = work / "nvcc"
         shutil.copy(sys.argv[1], driver)
         fake = work / ".nvcc-wrapped"
-        fake.write_text(
-            f"#!{sys.executable}\n"
-            """
-import json, os, pathlib, signal, subprocess, sys, time
-
-run = os.environ["RUN"]
-if run == "arguments":
-    print(json.dumps(sys.argv[1:]))
-    sys.exit()
-keep = pathlib.Path(next(x.split("=", 1)[1] for x in sys.argv if x.startswith("--keep-dir=")))
-(keep / "owned").touch(exist_ok=False)
-if run == "second":
-    worker = subprocess.Popen([sys.executable, "-c", '''
-import pathlib, signal
-
-def on_term(*_):
-    pathlib.Path("worker.signal").touch()
-    raise SystemExit
-
-signal.signal(signal.SIGTERM, on_term)
-pathlib.Path("worker.ready").touch()
-while True:
-    signal.pause()
-'''])
-
-    def on_term(*_):
-        try:
-            worker.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            worker.kill()
-            worker.wait()
-        signal.signal(signal.SIGTERM, signal.SIG_DFL)
-        os.kill(os.getpid(), signal.SIGTERM)
-
-    signal.signal(signal.SIGTERM, on_term)
-    while not pathlib.Path("worker.ready").exists():
-        time.sleep(0.01)
-elif run == "crash":
-    subprocess.Popen([sys.executable, "-c", '''
-import pathlib, sys, time
-
-pathlib.Path("orphan.ready").touch()
-deadline = time.monotonic() + 15
-while not pathlib.Path("orphan.release").exists() and time.monotonic() < deadline:
-    time.sleep(0.01)
-assert (pathlib.Path(sys.argv[1]) / "owned").is_file()
-pathlib.Path("orphan.done").touch()
-''', str(keep)], close_fds=False)
-    while not pathlib.Path("orphan.ready").exists():
-        time.sleep(0.01)
-
-pathlib.Path(run + ".ready").write_text(str(keep))
-while not pathlib.Path(run + ".release").exists():
-    time.sleep(0.01)
-assert (keep / "owned").is_file()
-"""
-        )
+        fake.write_text(f"#!{sys.executable} -P\n" + Path(sys.argv[2]).read_text())
         fake.chmod(0o755)
         env = {**os.environ, "TMPDIR": directory}
         env.pop("NVCC_PREPEND_FLAGS", None)
         env.pop("NVCC_APPEND_FLAGS", None)
         compile_args = ["-c", "example.cu", "-o", "example.o"]
+
+        # Exercise exec and supervised execution with an originally closed descriptor.
+        for args in (["--version"], compile_args):
+            subprocess.run(
+                [driver, *args],
+                cwd=work,
+                env={**env, "RUN": "closed-stdout"},
+                preexec_fn=lambda: os.close(1),
+                check=True,
+                timeout=10,
+            )
+
+        # Only the supervisor needs to reset SIGCHLD to wait for a child.
+        for args in (["--version"], compile_args):
+            subprocess.run(
+                [driver, *args],
+                cwd=work,
+                env={**env, "RUN": "ignore-sigchld"},
+                preexec_fn=lambda: signal.signal(signal.SIGCHLD, signal.SIG_IGN),
+                check=True,
+                timeout=10,
+            )
+
+        # A vendor can unblock an inherited signal and terminate from it.
+        terminated = subprocess.run(
+            [driver, *compile_args],
+            cwd=work,
+            env={**env, "RUN": "self-terminate"},
+            preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM}),
+            timeout=10,
+        )
+        assert terminated.returncode == -signal.SIGTERM, terminated.returncode
+        assert not list(work.glob("nvcc-keep-*"))
 
         def start(name):
             return subprocess.Popen(
@@ -151,6 +128,21 @@ assert (keep / "owned").is_file()
                 if process.poll() is None:
                     process.kill()
                     process.wait()
+
+        # Bash preserves the inherited disposition. Python installs SIG_IGN at startup.
+        bash = shutil.which("bash")
+        assert bash is not None
+        fake.write_text(f"#!{bash}\nkill -s PIPE $$\nexit 42\n")
+        for args in (["--version"], compile_args):
+            for restore, status in ((True, -signal.SIGPIPE), (False, 42)):
+                result = subprocess.run(
+                    [driver, *args],
+                    cwd=work,
+                    env=env,
+                    restore_signals=restore,
+                    timeout=10,
+                )
+                assert result.returncode == status, result.returncode
 
 
 if __name__ == "__main__":

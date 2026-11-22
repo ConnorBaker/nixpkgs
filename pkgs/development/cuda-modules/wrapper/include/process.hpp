@@ -68,15 +68,19 @@ class SignalMask {
 
     SignalMask(const SignalMask &) = delete;
     SignalMask &operator=(const SignalMask &) = delete;
-    ~SignalMask() {
-        sigaction(SIGCHLD, &originalChild_, nullptr);
-        restoreMask();
+    ~SignalMask() { restore(); }
+
+    int restore() const {
+        const int action = sigaction(SIGCHLD, &originalChild_, nullptr);
+        const int mask = restoreMask();
+        return action != 0 ? action : mask;
     }
 
-    int restoreMask() const { return sigprocmask(SIG_SETMASK, &original_, nullptr); }
     int wait(siginfo_t &info) const { return sigwaitinfo(&signals_, &info); }
 
   private:
+    int restoreMask() const { return sigprocmask(SIG_SETMASK, &original_, nullptr); }
+
     sigset_t signals_;
     sigset_t original_;
     struct sigaction originalChild_;
@@ -101,7 +105,7 @@ inline int run(const std::string &program, char *const argv[], std::string_view 
             std::cerr << wrapper << " wrapper: error: cannot inherit descriptor: " << std::strerror(errno) << '\n';
             _exit(127);
         }
-        if (signals.restoreMask() != 0) _exit(127);
+        if (signals.restore() != 0) _exit(127);
         _exit(exec(program, argv, wrapper));
     }
 
@@ -132,6 +136,10 @@ inline int exitStatus(int status) {
     if (WIFEXITED(status)) return WEXITSTATUS(status);
     const int signal = WTERMSIG(status);
     static_cast<void>(std::signal(signal, SIG_DFL));
+    sigset_t unblocked;
+    sigemptyset(&unblocked);
+    sigaddset(&unblocked, signal);
+    sigprocmask(SIG_UNBLOCK, &unblocked, nullptr);
     static_cast<void>(std::raise(signal));
     return 128 + signal;
 }

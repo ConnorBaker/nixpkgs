@@ -43,7 +43,9 @@ OptionKind classify(std::string_view spelling) {
 }
 
 struct Compilation {
-    Arguments effective;
+    explicit Compilation(std::string_view cwd) : scratchId(cwd) {}
+
+    cudaWrapper::StableId scratchId;
     Arguments sources;
     std::optional<std::string> output;
     fs::path outputDirectory;
@@ -64,17 +66,17 @@ struct Compilation {
     }
 };
 
-std::optional<Compilation> inspect(const Arguments &args) {
+std::optional<Compilation> inspect(const Arguments &args, std::string_view cwd) {
     constexpr std::array passThrough{
         "dryrun"sv, "version"sv, "V"sv, "h"sv, "help"sv, "E"sv, "preprocess"sv, "M"sv, "MM"sv,
         "generate-dependencies"sv, "generate-nonsystem-dependencies"sv, "clean"sv, "clean-targets"sv,
     };
-    Compilation build;
+    Compilation build(cwd);
     Arguments inputs;
     bool explicitLanguage = false;
     bool bypass = false;
     const auto inspectArgument = [&](const Argument &arg) {
-        build.effective.append_range(arg.words);
+        for (const auto &word : arg.words) build.scratchId.add(word);
         const auto name = optionName(arg.name);
         bypass |= std::ranges::contains(passThrough, name);
         if (name == "keep" || name == "keep-dir" || name == "save-temps" ||
@@ -122,22 +124,23 @@ std::optional<Compilation> inspect(const Arguments &args) {
 }
 
 int compile(const cudaWrapper::Tool &tool, const Arguments &args) {
-    const auto build = inspect(args);
-    if (!build) return tool.exec(args);
-
     std::error_code error;
     const auto cwd = fs::current_path(error);
     if (error) return tool.exec(args);
+    const auto build = inspect(args, cwd.native());
+    if (!build) return tool.exec(args);
 
     Arguments command;
-    if (build->seed)
-        command.push_back("--frandom-seed=nvcc-" + cudaWrapper::stableId(cwd.native(), build->sources));
+    if (build->seed) {
+        cudaWrapper::StableId seed(cwd.native());
+        seed.add(build->sources.front());
+        command.push_back("--frandom-seed=nvcc-" + seed.finish());
+    }
 
     std::optional<cudaWrapper::ScratchDirectory> scratch;
     if (build->keep) {
         const auto tmp = environment("TMPDIR");
-        const auto id = cudaWrapper::stableId(cwd.native(), build->effective);
-        const auto path = fs::path(tmp.empty() ? "/tmp"sv : tmp) / ("nvcc-keep-" + id);
+        const auto path = fs::path(tmp.empty() ? "/tmp"sv : tmp) / ("nvcc-keep-" + build->scratchId.finish());
         scratch.emplace(path, "nvcc");
         if (*scratch) {
             command.emplace_back("--keep");
