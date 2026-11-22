@@ -73,7 +73,7 @@ impl Compilation {
 
         let mut build = Self {
             sources: Vec::new(),
-            scratch_id: StableId::new(cwd),
+            scratch_id: StableId::new(cwd.as_os_str().as_bytes()),
             output: None,
             output_directory: PathBuf::new(),
             keep: true,
@@ -192,11 +192,14 @@ fn compile(mut tool: Tool) -> io::Result<i32> {
     if build.seed {
         let source = &build.sources[0];
         let mapped = paths.remap(cwd.join(OsStr::from_bytes(source)).as_os_str().as_bytes());
-        let mut seed = StableId::new(if mapped.is_some() {
-            Path::new("")
+        let cwd = cwd.as_os_str().as_bytes();
+        let mapped_directory = paths.remap(cwd);
+        let directory = if mapped.is_some() {
+            b""
         } else {
-            &cwd
-        });
+            mapped_directory.as_deref().unwrap_or(cwd)
+        };
+        let mut seed = StableId::new(directory);
         seed.push(mapped.as_deref().unwrap_or(source));
         args.push(format!("--frandom-seed=nvcc-{}", seed.finish()).into_bytes());
     }

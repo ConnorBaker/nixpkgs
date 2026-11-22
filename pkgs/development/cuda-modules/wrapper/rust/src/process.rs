@@ -73,6 +73,10 @@ impl Tool {
         })
     }
 
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     pub fn command(&self, args: &[Argument]) -> Command {
         let mut command = Command::new(&self.vendor);
         command.arg0(&self.argv0);

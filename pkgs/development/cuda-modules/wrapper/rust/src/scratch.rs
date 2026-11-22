@@ -1,7 +1,6 @@
 use crate::files::{descriptor_path, same_file};
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io;
-use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
@@ -9,9 +8,9 @@ use std::path::{Path, PathBuf};
 pub struct StableId(u64);
 
 impl StableId {
-    pub fn new(cwd: &Path) -> Self {
+    pub fn new(prefix: &[u8]) -> Self {
         let mut id = Self(14695981039346656037);
-        id.push(cwd.as_os_str().as_bytes());
+        id.push(prefix);
         id
     }
 

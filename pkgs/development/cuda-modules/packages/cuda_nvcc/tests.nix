@@ -249,6 +249,7 @@ in
 }
 // lib.optionalAttrs seeds {
   nvcc-mapped-builds = mkScriptTest ./tests/nvcc-mapped-builds.sh;
+  nvcc-mapped-working-directory = mkScriptTest ./tests/nvcc-mapped-working-directory.sh;
 }
 // lib.optionalAttrs recordsCommandLine {
   # Link-time optimization also records -nvvmpath, which is in cuda_nvcc.

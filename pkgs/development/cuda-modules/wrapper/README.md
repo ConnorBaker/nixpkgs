@@ -73,7 +73,7 @@ its own runtime.
 | `fatbinary` | Remaps matching image identifiers and the source paths in embedded PTX when requested. [Fat binary wrapper](../packages/cuda_nvcc/README.md#ptxas-and-fatbinary-wrappers) |
 | `nvprune` | Zeros archive member and symbol table timestamps, user IDs, and group IDs. Standalone object outputs retain their contents. [Package](../packages/cuda_nvprune/package.nix) |
 | `tileiras` | The existing package wrapper defaults `CUDA_ROOT` for toolkit discovery. When it resolves `ptxas` through `cuda_nvcc`, the assembler remaps source paths for the Tile IR compilation. [Package](../packages/cuda_tileiras.nix) |
-| `cudafe++`, `cicc` | Share an adapter that remaps the original source path used to derive internal symbol names when `BUILD_PATH_PREFIX_MAP` is set. |
+| `cudafe++`, `cicc` | Share an adapter that remaps the original source path used to derive internal symbol names when `BUILD_PATH_PREFIX_MAP` is set. For `cicc`, a mapped alias of the current directory also stabilizes debug and LTO metadata. [Working directory mapping](../packages/cuda_nvcc/README.md#nvcc-wrapper) |
 | `bin2c` | Embeds its input bytes in generated C. Frontend, assembler, and fat binary adapters remap paths before this stage. |
 | `__nvcc_device_query` | `nvcc -arch=native` uses this helper to choose code generation targets from the host's GPUs. Use explicit architectures for hardware-independent builds. |
 | `cuobjdump`, `nvdisasm`, `tileirdisasm`, `cu++filt` | These inspection tools expose information from their inputs. Use them to verify fixes at the producer. |
