@@ -105,7 +105,14 @@ in
   nvcc-reproducible = mkScriptTest ./tests/nvcc-reproducible.sh;
 
   # The cases in which the wrapper does not override the caller.
-  nvcc-wrapper = mkScriptTest ./tests/nvcc-wrapper.sh;
+  nvcc-wrapper =
+    let
+      headers = [ cuda_cudart ] ++ lib.optional (cudaAtLeast "13.0") cuda_crt;
+      headerFlags = map (package: "-I${lib.getOutput "include" package}/include") headers;
+    in
+    mkTest "nvcc-wrapper" ''
+      source ${./tests/nvcc-wrapper.sh} ${lib.escapeShellArgs headerFlags}
+    '';
 
   nvcc-process = mkProcessTest "nvcc-process" ''
     ${python3}/bin/python3 -P ${./tests/nvcc-process.py} \
