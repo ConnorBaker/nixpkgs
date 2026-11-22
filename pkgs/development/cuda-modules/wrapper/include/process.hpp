@@ -155,6 +155,8 @@ class Tool {
         wrapped_ = bin / ("." + name_ + "-wrapped");
     }
 
+    std::string_view name() const { return name_; }
+
     // Forward argv[0] verbatim when the vendor tool records the invocation name.
     int run(char *const argv[]) const { return cudaWrapper::run(wrapped_, argv, name_); }
     int exec(char *const argv[]) const { return cudaWrapper::exec(wrapped_, argv, name_); }

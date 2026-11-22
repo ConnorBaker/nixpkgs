@@ -53,7 +53,8 @@ It forwards them intact and skips non-compilation invocations such as `--version
 For compilations it can add:
 
 - `--frandom-seed` from CUDA 12.9 for a single source file. The value is derived from the working directory and source
-  argument, or from the mapped source path when `BUILD_PATH_PREFIX_MAP` matches it. NVIDIA requires different seeds
+  argument, or from the mapped source path when `BUILD_PATH_PREFIX_MAP` matches it. If only the working directory
+  matches, the seed uses its mapped spelling and the original source argument. NVIDIA requires different seeds
   for different translation units, and one invocation can take only one seed.
 - `--keep --keep-dir=$TMPDIR/nvcc-keep-<id>` (using `/tmp` if `TMPDIR` is unset). The directory name hashes the
   working directory and effective arguments, since the path can appear in debug information. Identical invocations
@@ -75,8 +76,25 @@ CUDA before 12.9 can still put PIDs in internal symbol names. The same limitatio
 multiple source files in one invocation. With `BUILD_PATH_PREFIX_MAP`, the frontend adapters remap the
 original source path that `cudafe++` and `cicc` use to derive another part of the internal symbol name. This makes
 ordinary and relocatable objects and line-info PTX reproducible across mapped build roots in the test below.
-Full device debug information records the working directory separately in `DW_AT_comp_dir`.
-Standalone LTO IR (`-dlto -ltoir`) also differed across mapped build roots in CUDA 13.5.
+Full device debug (`-G`) and standalone device LTO IR (`-dlto -ltoir`) also record the working directory.
+When the mapped working directory is an absolute path to the same directory, the `cicc` adapter supplies that
+spelling as `PWD`. The compiler can still open relative inputs and outputs in the original directory.
+
+For builds that need portable debugger paths, run each build under the same absolute path in an isolated build
+environment, such as a fixed subdirectory of Nix's Linux sandbox build directory. A bind mount at the mapped path
+also works when the build environment provides one. If you only need stable output bytes, Linux's `/proc/self/cwd`
+can serve as the alias without a separate mount:
+
+```sh
+BUILD_PATH_PREFIX_MAP="/proc/self/cwd=$(pwd -P)" nvcc -G -cubin kernel.cu
+BUILD_PATH_PREFIX_MAP="/proc/self/cwd=$(pwd -P)" nvcc -dlto -ltoir kernel.cu
+```
+
+Pass source and include paths relative to the working directory or through the stable alias. Physical absolute
+source paths can also be recorded as filenames, independently of the working-directory metadata.
+In CUDA-GDB, use `set substitute-path /proc/self/cwd /path/to/source` to find sources in a different directory.
+A prefix map whose target is purely virtual still remaps source paths, while full device debug and standalone LTO IR
+can retain the real working directory. Host debug paths (`-g`) use the host compiler's mapping options.
 
 ### Testing
 
@@ -88,6 +106,8 @@ paths and version-dependent expectations.
   longer needs the options.
 - `cudaPackages.cuda_nvcc.tests.nvcc-mapped-builds` compares objects and line-info PTX built in two directories
   mapped to the same source prefix.
+- `cudaPackages.cuda_nvcc.tests.nvcc-mapped-working-directory` compares full-debug PTX and cubins and standalone
+  LTO IR built through the same directory alias.
 - `cudaPackages.cuda_nvcc.tests.nvcc-wrapper` checks caller-supplied options and compiles through an external symlink.
 - `cudaPackages.cuda_nvcc.tests.nvcc-process` uses a stand-in compiler to check concurrent invocations, signal
   forwarding, and scratch directory recovery after `SIGKILL`.

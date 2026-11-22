@@ -136,7 +136,8 @@ int compile(const cudaWrapper::Tool &tool, const Arguments &args) {
     if (build->seed) {
         const auto &source = build->sources.front();
         const auto mapped = paths.remap((cwd / source).native());
-        cudaWrapper::StableId seed(mapped ? std::string_view{} : cwd.native());
+        const auto seedDirectory = mapped ? std::string{} : paths.remap(cwd.native()).value_or(cwd.native());
+        cudaWrapper::StableId seed(seedDirectory);
         seed.add(mapped ? *mapped : source);
         command.push_back("--frandom-seed=nvcc-" + seed.finish());
     }
