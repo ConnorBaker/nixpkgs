@@ -3,6 +3,7 @@
 pub mod arguments;
 pub mod artifact;
 pub mod files;
+pub mod path_prefix_map;
 pub mod process;
 pub mod ptx;
 pub mod scratch;

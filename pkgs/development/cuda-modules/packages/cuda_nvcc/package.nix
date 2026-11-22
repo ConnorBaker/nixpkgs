@@ -85,6 +85,7 @@ buildRedist (finalAttrs: {
         ++ lib.optionals (cudaOlder "12.5") [ "$(_NVVM_BRANCH_)" ]
         ++ lib.optionals (cudaAtLeast "12.5") [ "nvvm" ]
       );
+      installToolWrappers = callPackage ../../wrapper/install-tool-wrappers.nix { };
       newNvvmDir = "\${!outputBin:?}/nvvm";
     in
     lib.optionalString finalAttrs.finalPackage.meta.available (
@@ -158,34 +159,20 @@ buildRedist (finalAttrs: {
         compiler-bindir = ${backendStdenv.cc}/bin
         EOF
       ''
-      # nvcc names its intermediate files and some symbols after its process ID. Both names end up in the objects that
-      # it writes. The wrapper prevents that, see README.md.
-      + ''
-        nixLog "wrapping nvcc to add backendStdenv.cc to its PATH and to make its output reproducible"
-        mv --verbose "''${!outputBin:?}/bin/nvcc" "''${!outputBin:?}/bin/.nvcc-wrapped"
-        install --mode=0755 "${finalAttrs.passthru.nvccWrapper}/bin/nvcc-wrapper" "''${!outputBin:?}/bin/nvcc"
-      ''
-      # nvlink records its command line, including the library and NVVM directories in the Nix store, in the cubins it
-      # writes. See README.md.
-      # NOTE: The wrapper is copied rather than linked, so that cuda_nvcc doesn't refer to it.
-      + ''
-        nixLog "wrapping nvlink to remove references to the Nix store from the command line it records"
-        mv --verbose "''${!outputBin:?}/bin/nvlink" "''${!outputBin:?}/bin/.nvlink-wrapped"
-        install --mode=0755 "${finalAttrs.passthru.nvlinkWrapper}/bin/nvlink-wrapper" "''${!outputBin:?}/bin/nvlink"
-      ''
-      # Older ptxas releases put source mtimes in the device line table.
-      + ''
-        nixLog "wrapping ptxas to make its source metadata reproducible"
-        mv --verbose "''${!outputBin:?}/bin/ptxas" "''${!outputBin:?}/bin/.ptxas-wrapped"
-        install --mode=0755 "${finalAttrs.passthru.ptxasWrapper}/bin/ptxas-wrapper" "''${!outputBin:?}/bin/ptxas"
-      ''
-      # fatbinary can write the source path as an identifier and embed PTX
-      # containing its own source paths alongside the assembled cubin.
-      + ''
-        nixLog "wrapping fatbinary to support source-path remapping"
-        mv --verbose "''${!outputBin:?}/bin/fatbinary" "''${!outputBin:?}/bin/.fatbinary-wrapped"
-        install --mode=0755 "${finalAttrs.passthru.fatbinaryWrapper}/bin/fatbinary-wrapper" "''${!outputBin:?}/bin/fatbinary"
-      ''
+      # Copy the adapters to the public paths to avoid runtime references to their build outputs.
+      + installToolWrappers {
+        wrappers = {
+          nvcc = finalAttrs.passthru.nvccWrapper;
+          nvlink = finalAttrs.passthru.nvlinkWrapper;
+          ptxas = finalAttrs.passthru.ptxasWrapper;
+          fatbinary = finalAttrs.passthru.fatbinaryWrapper;
+          "cudafe++" = finalAttrs.passthru.frontendWrapper;
+        };
+      }
+      + installToolWrappers {
+        directory = "nvvm/bin";
+        wrappers.cicc = finalAttrs.passthru.frontendWrapper;
+      }
       # Fix compatibility with glibc 2.42:
       # The cospi|sinpi|rsqrt function signatures in include/common/math_functions.h do not match
       # glibc 2.42's.
@@ -280,6 +267,10 @@ buildRedist (finalAttrs: {
     fatbinaryWrapper = callPackage ../../wrapper/mk-tool-wrapper.nix { } {
       name = "fatbinary-wrapper";
       description = "Wrapper to remap source paths in CUDA fat binaries";
+    };
+    frontendWrapper = callPackage ../../wrapper/mk-tool-wrapper.nix { } {
+      name = "cuda-frontend-wrapper";
+      description = "Wrapper to remap source paths in the CUDA compiler frontends";
     };
     gpuCheck = callPackage ./gpu-check.nix { cuda_nvcc = finalAttrs.finalPackage; };
     tests = callPackages ./tests.nix { cuda_nvcc = finalAttrs.finalPackage; };

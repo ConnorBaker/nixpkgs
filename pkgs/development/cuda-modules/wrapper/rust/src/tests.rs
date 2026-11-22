@@ -1,7 +1,8 @@
 use crate::arguments::{Quote, tokenize};
 use crate::artifact::{blank_store_hashes, edit_elf_sections};
 use crate::files::Artifact;
-use crate::ptx::{PathPrefixMap, normalize_source_info};
+use crate::path_prefix_map::PathPrefixMap;
+use crate::ptx::normalize_source_info;
 
 #[test]
 fn nvidia_option_quoting_preserves_raw_path_bytes() {

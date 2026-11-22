@@ -14,8 +14,9 @@ const OPERANDS: &[&[u8]] = &[
 use cuda_tool_wrapper::{
     arguments::{Argument, Arguments, Kind, Quote, tokenize, visit_options},
     files::{GeneratedFile, special_file},
+    path_prefix_map::PathPrefixMap,
     process::{Tool, exit_status, wrapper_main},
-    ptx::{PathPrefixMap, normalize_source_info},
+    ptx::normalize_source_info,
     scratch::{ScratchDirectory, StableId},
 };
 use std::collections::HashSet;
@@ -182,10 +183,21 @@ fn compile(mut tool: Tool) -> io::Result<i32> {
     let Some(build) = Compilation::inspect(&tool.args, &cwd) else {
         return forward();
     };
+    let paths = if build.seed || build.ptx {
+        PathPrefixMap::from_environment()?
+    } else {
+        PathPrefixMap::default()
+    };
     let mut args = Vec::new();
     if build.seed {
-        let mut seed = StableId::new(&cwd);
-        seed.push(&build.sources[0]);
+        let source = &build.sources[0];
+        let mapped = paths.remap(cwd.join(OsStr::from_bytes(source)).as_os_str().as_bytes());
+        let mut seed = StableId::new(if mapped.is_some() {
+            Path::new("")
+        } else {
+            &cwd
+        });
+        seed.push(mapped.as_deref().unwrap_or(source));
         args.push(format!("--frandom-seed=nvcc-{}", seed.finish()).into_bytes());
     }
     let scratch = if build.keep {
@@ -206,15 +218,10 @@ fn compile(mut tool: Tool) -> io::Result<i32> {
     }
     args.extend_from_slice(&tool.args);
 
-    let paths = if build.ptx {
-        PathPrefixMap::from_environment()?
-    } else {
-        PathPrefixMap::default()
-    };
-    let outputs = if paths.is_empty() {
-        Vec::new()
-    } else {
+    let outputs = if build.ptx && !paths.is_empty() {
         build.ptx_outputs()?
+    } else {
+        Vec::new()
     };
     let command = nvcc_command(&tool, &args);
     if scratch.is_none() && outputs.is_empty() {

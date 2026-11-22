@@ -13,8 +13,9 @@ const OPERANDS: &[&[u8]] = &[
 
 use cuda_tool_wrapper::{
     arguments::{Kind, classify, informational, rewrite_options},
+    path_prefix_map::PathPrefixMap,
     process::wrapper_main,
-    ptx::{PathPrefixMap, normalize_source_info, rewritten_input},
+    ptx::{normalize_source_info, rewritten_input},
 };
 use std::process::ExitCode;
 

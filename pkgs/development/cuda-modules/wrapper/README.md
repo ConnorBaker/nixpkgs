@@ -35,10 +35,10 @@ its own runtime.
 3. Build the adapter with [`mk-tool-wrapper.nix`](./mk-tool-wrapper.nix), passing the Cargo binary name, a description,
    and any required build-time environment variables. See
    [`nvcc-wrapper.nix`](../packages/cuda_nvcc/nvcc-wrapper.nix).
-4. In the package's install phase, move the original executable to `.<tool>-wrapped` in the same directory and
-   copy the adapter to the original path. `wrapper_main("<tool>", …)` locates the vendor executable next to the
-   installed adapter, including when the adapter is reached through a symlink. Use the path the calling program
-   actually resolves. For example, `nvcc` looks up `nvlink` next to itself. See
+4. Call [`install-tool-wrappers.nix`](./install-tool-wrappers.nix) in the package's install phase with a map
+   from each executable name to its adapter derivation. The helper moves each vendor executable to
+   `.<tool>-wrapped` and copies the adapter to its public path. Choose the directory the caller uses.
+   For example, `nvcc` looks up `nvlink` next to itself. See
    [the installation in `cuda_nvcc/package.nix`](../packages/cuda_nvcc/package.nix).
 5. Test the installed entry point with the real vendor executable and inspect the resulting metadata or compare
    repeated outputs. Test that explicit caller options and the vendor tool's failure status are preserved. See
@@ -51,6 +51,7 @@ its own runtime.
   double quotes, so rewrites requiring literal double quotes in these files are skipped.
 - [`process`](./rust/src/process.rs) provides `Tool::exec` for direct handoff and `Tool::run` for waiting,
   forwarding signals, and propagating the tool's exit status. `Tool::edit_output` edits artifacts after success.
+  `installed_wrapper_main` lets one adapter find the vendor tool using the installed filename.
 - [`scratch`](./rust/src/scratch.rs) provides stable identifiers and locked scratch directories. Pass the
   directory lease to `Tool::run` so the compiler can hold the lock across `exec`.
 - [`files`](./rust/src/files.rs) provides anonymous inputs and bounded access to artifact bytes. `GeneratedFile`
@@ -59,7 +60,8 @@ its own runtime.
 - [`artifact`](./rust/src/artifact.rs) edits named ELF64 sections and normalizes regular `ar` member timestamps and ownership
   while preserving offsets. Apply `blank_store_hashes` to metadata verified to carry incidental references.
   For example, `nvlink` applies it to `.note.nv.tkinfo`.
-- [`ptx`](./rust/src/ptx.rs) rewrites source records in PTX and parses `BUILD_PATH_PREFIX_MAP`.
+- [`path_prefix_map`](./rust/src/path_prefix_map.rs) parses and applies `BUILD_PATH_PREFIX_MAP`.
+- [`ptx`](./rust/src/ptx.rs) rewrites source records in PTX.
 
 ## CUDA tools
 
@@ -71,7 +73,8 @@ its own runtime.
 | `fatbinary` | Remaps matching image identifiers and the source paths in embedded PTX when requested. [Fat binary wrapper](../packages/cuda_nvcc/README.md#ptxas-and-fatbinary-wrappers) |
 | `nvprune` | Zeros archive member and symbol table timestamps, user IDs, and group IDs. Standalone object outputs retain their contents. [Package](../packages/cuda_nvprune/package.nix) |
 | `tileiras` | The existing package wrapper defaults `CUDA_ROOT` for toolkit discovery. When it resolves `ptxas` through `cuda_nvcc`, the assembler remaps source paths for the Tile IR compilation. [Package](../packages/cuda_tileiras.nix) |
-| `cudafe++`, `cicc`, `bin2c` | Internal frontend and embedding stages can carry paths from their inputs. The public tool wrappers handle PTX source directives, fat binary identifiers, and toolkit notes at the relevant output boundaries. |
+| `cudafe++`, `cicc` | Share an adapter that remaps the original source path used to derive internal symbol names when `BUILD_PATH_PREFIX_MAP` is set. |
+| `bin2c` | Embeds its input bytes in generated C. Frontend, assembler, and fat binary adapters remap paths before this stage. |
 | `__nvcc_device_query` | `nvcc -arch=native` uses this helper to choose code generation targets from the host's GPUs. Use explicit architectures for hardware-independent builds. |
 | `cuobjdump`, `nvdisasm`, `tileirdisasm`, `cu++filt` | These inspection tools expose information from their inputs. Use them to verify fixes at the producer. |
 | `ctadvisor`, CUDA-GDB, Nsight, Compute Sanitizer | These tools report compilation timings, runtime observations, or source locations for diagnostics. Their reports are distinct from compiler artifacts. |

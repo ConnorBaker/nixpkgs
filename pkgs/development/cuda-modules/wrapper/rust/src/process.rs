@@ -1,6 +1,7 @@
 use crate::arguments::{Argument, Arguments, RewrittenArgs};
 use crate::files::{Artifact, GeneratedFile};
 use libc::{SIGCHLD, SIGHUP, SIGINT, SIGPIPE, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
+use std::borrow::Cow;
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
@@ -42,22 +43,33 @@ extern "C" fn save_invocation() {
 }
 
 pub struct Tool {
-    name: &'static str,
+    name: Cow<'static, str>,
     pub args: Arguments,
     argv0: OsString,
     vendor: PathBuf,
 }
 
 impl Tool {
-    fn new(name: &'static str) -> io::Result<Self> {
+    fn new(name: Option<&'static str>) -> io::Result<Self> {
         let executable = fs::read_link("/proc/self/exe")?;
+        let name = match name {
+            Some(name) => Cow::Borrowed(name),
+            None => Cow::Owned(
+                executable
+                    .file_name()
+                    .and_then(OsStr::to_str)
+                    .ok_or_else(|| io::Error::other("invalid installed wrapper name"))?
+                    .to_owned(),
+            ),
+        };
         let mut args = env::args_os();
-        let argv0 = args.next().unwrap_or_else(|| OsString::from(name));
+        let argv0 = args.next().unwrap_or_else(|| OsString::from(name.as_ref()));
+        let vendor = executable.with_file_name(format!(".{name}-wrapped"));
         Ok(Self {
             name,
             args: args.map(OsStringExt::into_vec).collect(),
             argv0,
-            vendor: executable.with_file_name(format!(".{name}-wrapped")),
+            vendor,
         })
     }
 
@@ -91,7 +103,10 @@ impl Tool {
     }
 
     pub fn use_installed_name(&mut self) {
-        self.argv0 = self.vendor.with_file_name(self.name).into_os_string();
+        self.argv0 = self
+            .vendor
+            .with_file_name(self.name.as_ref())
+            .into_os_string();
     }
 
     fn launch_failed(&self, error: io::Error) -> i32 {
@@ -178,17 +193,29 @@ impl Tool {
         let output = GeneratedFile::new(output)?;
         let status = exit_status(self.run(command, None)?);
         if status == 0 {
-            output.edit(self.name, edit)?;
+            output.edit(&self.name, edit)?;
         }
         Ok(status)
     }
 }
 
 pub fn wrapper_main(name: &'static str, wrapper: impl FnOnce(Tool) -> io::Result<i32>) -> ExitCode {
+    run_wrapper(Some(name), wrapper)
+}
+
+// A single adapter can be copied to multiple public tool paths.
+pub fn installed_wrapper_main(wrapper: impl FnOnce(Tool) -> io::Result<i32>) -> ExitCode {
+    run_wrapper(None, wrapper)
+}
+
+fn run_wrapper(
+    name: Option<&'static str>,
+    wrapper: impl FnOnce(Tool) -> io::Result<i32>,
+) -> ExitCode {
     match Tool::new(name).and_then(wrapper) {
         Ok(code) => ExitCode::from(code as u8),
         Err(error) => {
-            eprintln!("{name} wrapper: error: {error}");
+            eprintln!("{} wrapper: error: {error}", name.unwrap_or("CUDA tool"));
             ExitCode::FAILURE
         }
     }
