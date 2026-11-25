@@ -205,6 +205,13 @@ def parse_systemctl_property(line: str) -> tuple[str, str] | None:
     return match[1], match[2]
 
 
+def nc_port_command(addr: str, port: int) -> str:
+    """`nc -z addr port`, with the port reserved so that the kernel cannot give
+    the connection that port as its source, connecting it to itself."""
+    f = "/proc/sys/net/ipv4/ip_local_reserved_ports"
+    return f'r=$(cat {f}); trap \'{{ echo "$r" > {f}; }} 2>/dev/null || :\' EXIT; {{ echo "${{r:+$r,}}{port}" > {f}; }} 2>/dev/null || :; nc -z {addr} {port}'
+
+
 def retry(
     fn: Callable,
     timeout_seconds: int | dt.timedelta | None = None,
@@ -881,7 +888,7 @@ class BaseMachine(ABC):
         _warn_if_numeric_duration(timeout, "wait_for_open_port")
 
         def port_is_open(_last_try: bool) -> bool:
-            status, _ = self.execute(f"nc -z {addr} {port}")
+            status, _ = self.execute(nc_port_command(addr, port))
             return status == 0
 
         with self.nested(f"waiting for TCP port {port} on {addr}"):
@@ -926,7 +933,7 @@ class BaseMachine(ABC):
         _warn_if_numeric_duration(timeout, "wait_for_closed_port")
 
         def port_is_closed(_last_try: bool) -> bool:
-            status, _ = self.execute(f"nc -z {addr} {port}")
+            status, _ = self.execute(nc_port_command(addr, port))
             return status != 0
 
         with self.nested(f"waiting for TCP port {port} on {addr} to be closed"):
