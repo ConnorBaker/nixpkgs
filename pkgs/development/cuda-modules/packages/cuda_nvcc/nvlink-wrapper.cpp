@@ -16,16 +16,15 @@ using cudaWrapper::OptionKind;
 
 std::optional<std::string> findOutput(std::span<const std::string> args) {
     return cudaWrapper::lastOutput(args, [](std::string_view name) {
-        constexpr std::array operands{
-            "-arch"sv, "--arch"sv, "-cpu-arch"sv, "--cpu-arch"sv, "-m"sv, "--machine"sv, "-L"sv, "--library-path"sv,
-            "-l"sv, "--library"sv, "-Xnvvm"sv, "--Xnvvm"sv, "-Xptxas"sv, "--Xptxas"sv, "-Ofc"sv, "--Ofast-compile"sv,
-            "-ghls"sv, "--gen-host-linker-script"sv, "-kernels-used"sv, "--kernels-used"sv, "-variables-used"sv,
-            "--variables-used"sv, "--register-link-binaries"sv, "-nvvmpath"sv, "--nvvmpath"sv, "-uidx"sv, "--uidx-file"sv,
-            "-maxrregcount"sv, "--maxrregcount"sv, "-split-compile"sv, "--split-compile"sv,
-            "-split-compile-extended"sv, "--split-compile-extended"sv, "-time"sv, "--time"sv,
+        // Only free-form operands can look like -o or an options-file flag.
+        constexpr std::array freeFormOperands{
+            "-L"sv, "--library-path"sv, "-l"sv, "--library"sv, "-Xnvvm"sv, "--Xnvvm"sv, "-Xptxas"sv, "--Xptxas"sv,
+            "-kernels-used"sv, "--kernels-used"sv, "-variables-used"sv, "--variables-used"sv,
+            "--register-link-binaries"sv, "-nvvmpath"sv, "--nvvmpath"sv, "-uidx"sv, "--uidx-file"sv,
+            "-time"sv, "--time"sv, "-host-ccbin"sv, "--host-ccbin"sv,
         };
         if (cudaWrapper::isOptionsFile(name)) return OptionKind::optionsFiles;
-        return cudaWrapper::isOutputOption(name) || std::ranges::contains(operands, name)
+        return cudaWrapper::isOutputOption(name) || std::ranges::contains(freeFormOperands, name)
             ? OptionKind::operand : OptionKind::plain;
     });
 }
@@ -35,9 +34,8 @@ template <typename Output> bool scrub(Output &output) {
         return cudaWrapper::editElfSections(output, ".note.nv.tkinfo", cudaWrapper::blankStoreHashes);
 
     // Non-ELF outputs, such as host linker scripts, can contain live paths.
-    auto contents = output.read(0, output.size());
-    if (cudaWrapper::blankStoreHashes(contents))
-        throw std::runtime_error("the output isn't an ELF file, but refers to the Nix store");
+    if (cudaWrapper::containsStoreHashCandidate(output))
+        throw std::runtime_error("the non-ELF output contains a possible Nix store reference");
     return false;
 }
 

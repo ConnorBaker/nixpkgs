@@ -90,7 +90,7 @@ inline bool sameFileVersion(const struct stat &a, const struct stat &b) {
     const auto sameTime = [](const timespec &x, const timespec &y) {
         return x.tv_sec == y.tv_sec && x.tv_nsec == y.tv_nsec;
     };
-    return sameFile(a, b) && sameTime(a.st_mtim, b.st_mtim) && sameTime(a.st_ctim, b.st_ctim);
+    return sameFile(a, b) && a.st_size == b.st_size && sameTime(a.st_mtim, b.st_mtim) && sameTime(a.st_ctim, b.st_ctim);
 }
 
 inline std::string readOptionsFile(const std::string &path, std::size_t &bytesRemaining) {
@@ -167,8 +167,13 @@ class GeneratedFile {
         std::vector<char> read(std::uint64_t off, std::uint64_t n) const {
             checkFileRange(size_, off, n);
             std::vector<char> bytes(n);
-            if (!transferAllAt(pread, fd_, std::span(bytes), off)) fileError("cannot read", path_);
+            readAt(off, bytes);
             return bytes;
+        }
+
+        void readInto(std::uint64_t off, std::span<char> bytes) const {
+            checkFileRange(size_, off, bytes.size());
+            readAt(off, bytes);
         }
 
         void write(std::uint64_t off, std::span<const char> bytes) {
@@ -184,6 +189,10 @@ class GeneratedFile {
         }
 
       private:
+        void readAt(std::uint64_t off, std::span<char> bytes) const {
+            if (!transferAllAt(pread, fd_, bytes, off)) fileError("cannot read", path_);
+        }
+
         void writeAt(std::uint64_t off, std::span<const char> bytes) {
             if (!transferAllAt(pwrite, fd_, bytes, off)) fileError("cannot write", path_);
         }
@@ -213,6 +222,11 @@ class MemoryBuffer {
         checkFileRange(size(), off, n);
         const auto part = bytes_.subspan(off, n);
         return {part.begin(), part.end()};
+    }
+
+    void readInto(std::uint64_t off, std::span<char> data) const {
+        checkFileRange(size(), off, data.size());
+        std::ranges::copy(bytes_.subspan(off, data.size()), data.begin());
     }
 
     void write(std::uint64_t off, std::span<const char> data) {

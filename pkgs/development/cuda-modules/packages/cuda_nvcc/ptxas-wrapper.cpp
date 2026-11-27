@@ -13,7 +13,7 @@ using cudaWrapper::OptionKind;
 OptionKind classify(std::string_view name) {
     if (cudaWrapper::isOptionsFile(name)) return OptionKind::optionsFiles;
     constexpr std::array operands{
-        "-o"sv, "--output-file"sv, "-arch"sv, "--gpu-name"sv, "-O"sv, "--opt-level"sv, "-m"sv, "--machine"sv,
+        "-o"sv, "--output-file"sv, "-arch"sv, "--gpu-name"sv, "--opt-level"sv, "-m"sv, "--machine"sv,
         "-e"sv, "--entry"sv, "-ias"sv, "--input-as-string"sv, "-Ofc"sv, "--Ofast-compile"sv,
         "-dlcm"sv, "--def-load-cache"sv, "-dscm"sv, "--def-store-cache"sv, "-flcm"sv, "--force-load-cache"sv,
         "-fmad"sv, "--fmad"sv, "-func-maxrregcount"sv, "--device-function-maxrregcount"sv, "-maxntid"sv, "--maxntid"sv,
@@ -21,7 +21,7 @@ OptionKind classify(std::string_view name) {
         "-regUsageLevel"sv, "--register-usage-level"sv, "-split-compile"sv, "--split-compile"sv,
         "-allow-expensive-optimizations"sv, "--allow-expensive-optimizations"sv,
         "-device-stack-protector"sv, "--device-stack-protector"sv, "-apply-controls"sv, "--apply-controls"sv,
-        "-enable-func-clone-sc"sv, "--enable-func-clone-sc"sv, "-sanitize"sv, "--sanitize"sv, "--nv-host"sv,
+        "-enable-func-clone-sc"sv, "--enable-func-clone-sc"sv, "-sanitize"sv, "--sanitize"sv, "-nv-host"sv, "--nv-host"sv,
     };
     return std::ranges::contains(operands, name) ? OptionKind::operand : OptionKind::plain;
 }

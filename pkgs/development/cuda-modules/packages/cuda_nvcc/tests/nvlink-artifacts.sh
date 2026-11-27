@@ -18,8 +18,9 @@ expect "$(FAKE=write FAKE_CONTENTS=note.o FAKE_STATUS=1 status ./nvlink -o faile
 cmp failed.o note.o
 
 # Anything else the wrapper doesn't expect fails the link, before nvlink runs where possible.
-printf 'INPUT(%s/%s-x)\n' "$storeDir" "$hash" > text
-FAKE=write FAKE_CONTENTS=text expectFailure "the output isn't an ELF file, but refers to the Nix store" \
+# Leave 31 hash bytes in the first buffer and the last byte at EOF.
+{ head -c $((64 * 1024 - 31)) /dev/zero; printf '%s' "$hash"; } > non-elf
+FAKE=write FAKE_CONTENTS=non-elf expectFailure "the non-ELF output contains a possible Nix store reference" \
   ./nvlink -o result
 printf '\x7fELF' > truncated
 FAKE=write FAKE_CONTENTS=truncated expectFailure "the output is a malformed ELF file" ./nvlink -o result

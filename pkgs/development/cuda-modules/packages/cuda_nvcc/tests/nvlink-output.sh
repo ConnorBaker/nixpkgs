@@ -34,4 +34,7 @@ nvlink -ghls lcs-abs -o wrapped.ld
 "$toolkit/bin/.nvlink-wrapped" -ghls lcs-abs -o unwrapped.ld
 cmp wrapped.ld unwrapped.ld
 
+# The script mode operand is optional. A following -o is an option.
+expectFailure "/dev/null is not a regular file" nvlink -ghls -o /dev/null
+
 nvlink --version

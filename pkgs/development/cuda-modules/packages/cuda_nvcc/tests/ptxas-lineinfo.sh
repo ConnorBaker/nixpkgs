@@ -22,7 +22,8 @@ cmp 1.cubin 1900000000.cubin
 readelf --debug-dump=rawline 1.cubin | grep -F "$PWD/source tree"
 
 cp input.ptx 'input=with spaces.ptx'
-printf '%s\n' '-lineinfo "input=with spaces.ptx" -o "mapped.cubin"' > inner.optf
+# Bare -O leaves the following filename as a positional input.
+printf '%s\n' '-lineinfo -O "input=with spaces.ptx" -o "mapped.cubin"' > inner.optf
 printf '%s\n' '-arch=sm_80 --options-file=inner.optf' > outer.optf
 BUILD_PATH_PREFIX_MAP="/usr/src/cuda-test=$PWD/source tree" ptxas -optf outer.optf
 readelf --debug-dump=rawline mapped.cubin > mapped.txt

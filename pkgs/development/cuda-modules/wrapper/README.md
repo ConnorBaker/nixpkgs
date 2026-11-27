@@ -61,8 +61,8 @@ Nixpkgs' static toolchain links the library and musl into each adapter. The vend
   an output's file identity before the tool runs and verifies it before editing. `MemoryBuffer` provides the
   same byte-access interface for artifacts returned by APIs.
 - [`elf.hpp`](./include/elf.hpp) edits named sections of 64-bit little-endian ELF files in place.
-  [`nix-store.hpp`](./include/nix-store.hpp) replaces hashes at fixed width. Use these on metadata that has been verified
-  to carry incidental references. For example, `nvlink` applies the hash transform to `.note.nv.tkinfo`.
+  [`nix-store.hpp`](./include/nix-store.hpp) replaces candidate hashes at fixed width and detects them with bounded
+  reads. `nvlink` scrubs `.note.nv.tkinfo` and rejects non-ELF outputs with candidates.
 - [`archive.hpp`](./include/archive.hpp) normalizes regular `ar` member timestamps and ownership in place. Member data and
   symbol offsets are preserved.
 - [`ptx.hpp`](./include/ptx.hpp) rewrites source records in PTX and can pass the new input to the vendor through an
