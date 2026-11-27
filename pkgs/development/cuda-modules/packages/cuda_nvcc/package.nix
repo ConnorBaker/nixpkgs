@@ -2,17 +2,34 @@
   _cuda,
   backendStdenv,
   buildRedist,
+  buildPackages,
   callPackage,
   callPackages,
   setupCudaHook,
   cudaAtLeast,
   cudaOlder,
+  cudaToolWrapper,
   cccl,
   glibc,
   lib,
   libnvvm,
   makeBinaryWrapper,
+  pkgsStatic,
+  tool-wrapper,
 }:
+let
+  inherit (backendStdenv) buildPlatform hostPlatform;
+  emulator = lib.optional (!buildPlatform.canExecute hostPlatform) (
+    hostPlatform.emulator buildPackages
+  );
+
+  launcherOptions = {
+    nvcc = [
+      "--nvcc-backend-bin=${backendStdenv.cc}/bin"
+    ];
+    ptxas = lib.optional (cudaOlder "13.4") "--ptxas-inherits-mtime=true";
+  };
+in
 buildRedist (finalAttrs: {
   redistName = "cuda";
   pname = "cuda_nvcc";
@@ -26,12 +43,9 @@ buildRedist (finalAttrs: {
   # The nvcc and cicc binaries contain hard-coded references to /usr
   allowFHSReferences = true;
 
-  nativeBuildInputs = [
-    makeBinaryWrapper
-  ];
-
   # Entries here will be in nativeBuildInputs when cuda_nvcc is in nativeBuildInputs
   propagatedBuildInputs = [ setupCudaHook ];
+  nativeBuildInputs = [ makeBinaryWrapper ];
 
   # Patch the nvcc.profile.
   # Syntax:
@@ -90,6 +104,33 @@ buildRedist (finalAttrs: {
         ++ lib.optionals (cudaOlder "12.5") [ "$(_NVVM_BRANCH_)" ]
         ++ lib.optionals (cudaAtLeast "12.5") [ "nvvm" ]
       );
+      inherit (pkgsStatic.stdenv) cc;
+      installAdapter = wrapper: path: ''
+        installAdjacentWrapper "$toolkitBin"/${lib.escapeShellArg path} ${lib.escapeShellArg wrapper}
+      '';
+      installLauncher = options: path: ''
+        installCudaLauncher ${cc}/bin/${cc.targetPrefix}cc ${lib.getExe cudaToolWrapper} \
+          "$toolkitBin"/${lib.escapeShellArg path} \
+          --add-flag "--operands-file=$toolkitBin/bin/.${builtins.baseNameOf path}.operands" ${
+            lib.escapeShellArgs (
+              lib.concatMap (option: [
+                "--add-flag"
+                option
+              ]) options
+            )
+          }
+      '';
+      # A null entry leaves a vendor tool at its original path.
+      executables = {
+        "bin/__nvcc_device_query" = null;
+        "bin/bin2c" = null;
+        "bin/cudafe++" = installAdapter (lib.getExe' cudaToolWrapper.frontend "cuda-frontend-wrapper");
+        "bin/fatbinary" = installAdapter (lib.getExe' cudaToolWrapper.fatbinary "fatbinary-wrapper");
+        "bin/nvcc" = installLauncher launcherOptions.nvcc;
+        "bin/nvlink" = installAdapter (lib.getExe' cudaToolWrapper.nvlink "nvlink-wrapper");
+        "bin/ptxas" = installLauncher launcherOptions.ptxas;
+        "nvvm/bin/cicc" = executables."bin/cudafe++";
+      };
       newNvvmDir = "\${!outputBin:?}/nvvm";
     in
     lib.optionalString finalAttrs.finalPackage.meta.available (
@@ -108,6 +149,19 @@ buildRedist (finalAttrs: {
         cp -rv "${libnvvm}" "${newNvvmDir}"
         chmod -Rv u+w "${newNvvmDir}"
       ''
+      + ''
+        toolkitBin="''${!outputBin:?}"
+        executables=$(cd "$toolkitBin" && find -L . -path '*/bin/*' -type f -executable -printf '%P\n')
+        diff -u --label "expected CUDA executables" --label "installed CUDA executables" \
+          <(printf '%s\n' ${lib.escapeShellArgs (builtins.attrNames executables)}) \
+          <(LC_ALL=C sort <<< "$executables")
+
+        source ${tool-wrapper.installAdjacentWrapper}
+        source ${./install-launcher.sh}
+      ''
+      + lib.concatMapAttrsStringSep "\n" (
+        path: install: lib.optionalString (install != null) (install path)
+      ) executables
       # Unconditional patching to remove the use of $(_TARGET_SIZE_) since we don't use lib64 in Nixpkgs
       + ''
         nixLog 'removing $(_TARGET_SIZE_) from nvcc.profile'
@@ -162,19 +216,6 @@ buildRedist (finalAttrs: {
         # Fix a compatible backend compiler
         compiler-bindir = ${backendStdenv.cc}/bin
         EOF
-
-        nixLog "wrapping nvcc to add backendStdenv.cc to its PATH"
-        wrapProgramBinary \
-          "''${!outputBin:?}/bin/nvcc" \
-          --prefix PATH : ${lib.makeBinPath [ backendStdenv.cc ]}
-      ''
-      # nvlink records its command line, including the library and NVVM directories in the Nix store, in the cubins it
-      # writes. See README.md.
-      # NOTE: The wrapper is copied rather than linked, so that cuda_nvcc doesn't refer to it.
-      + ''
-        nixLog "wrapping nvlink to remove references to the Nix store from the command line it records"
-        mv --verbose "''${!outputBin:?}/bin/nvlink" "''${!outputBin:?}/bin/.nvlink-wrapped"
-        install --mode=0755 "${finalAttrs.passthru.nvlinkWrapper}/bin/nvlink-wrapper" "''${!outputBin:?}/bin/nvlink"
       ''
       # Fix compatibility with glibc 2.42:
       # The cospi|sinpi|rsqrt function signatures in include/common/math_functions.h do not match
@@ -244,6 +285,13 @@ buildRedist (finalAttrs: {
             '#if defined(__CUDACC__) || defined(__CUDA_ARCH__) || defined(__CUDA_LIBDEVICE__)' \
             '#if (defined(__CUDACC__) || defined(__CUDA_ARCH__) || defined(__CUDA_LIBDEVICE__)) && !defined(__clang__)'
       ''
+      + ''
+        # Probe the installed executables after autoPatchelf has fixed their interpreters.
+        generateCudaOperands() {
+          ${lib.getExe buildPackages.python3} -P ${./option-operands.py} "$out/bin" ${lib.escapeShellArgs emulator}
+        }
+        postFixupHooks+=(generateCudaOperands)
+      ''
     );
 
   brokenAssertions = [
@@ -264,7 +312,6 @@ buildRedist (finalAttrs: {
   ];
 
   passthru = {
-    nvlinkWrapper = callPackage ./nvlink-wrapper.nix { };
     gpuCheck = callPackage ./gpu-check.nix { cuda_nvcc = finalAttrs.finalPackage; };
     tests = callPackages ./tests.nix { cuda_nvcc = finalAttrs.finalPackage; };
   };

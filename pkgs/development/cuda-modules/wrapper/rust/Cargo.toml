@@ -1,0 +1,38 @@
+[package]
+name = "cuda-tool-wrapper"
+version = "0.1.0"
+description = "CUDA command adapters and PTX normalization for tool-wrapper"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+publish = false
+
+[profile.release]
+lto = "thin"
+
+[features]
+wrapper = ["tool-wrapper/wrapper"]
+
+[dependencies]
+memchr = "2"
+tool-wrapper = { path = "./tool-wrapper" }
+
+[[bin]]
+name = "cuda-frontend-wrapper"
+required-features = ["wrapper"]
+
+[[bin]]
+name = "fatbinary-wrapper"
+required-features = ["wrapper"]
+
+[[bin]]
+name = "nvlink-wrapper"
+required-features = ["wrapper"]
+
+[[bin]]
+name = "nvprune-wrapper"
+required-features = ["wrapper"]
+
+[[bin]]
+name = "cuda-wrapper"
+required-features = ["wrapper"]

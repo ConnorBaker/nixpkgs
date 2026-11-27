@@ -1,0 +1,10 @@
+[package]
+name = "cuda-reproducible-jit-example"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+cuda-tool-wrapper = { path = "../../rust" }
+cudarc = { version = "0.19.10", default-features = false, features = ["std", "nvrtc", "cuda-12090", "dynamic-loading"] }
+baracuda-nvjitlink = "0.1.0-alpha.148"
