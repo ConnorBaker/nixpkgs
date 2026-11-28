@@ -1,21 +1,8 @@
 {
-  replaceVars,
-  cudaLibPaths,
-}:
-{
   version = "13.1.1";
   sourceHash = "sha256-AvIw2G4EGWsX7PxFGxzECXhwkbwYslHzRdUArTNf7jE=";
 
-  nvidiaLibsPatch = replaceVars ./patch-nvidia-libs-paths_13_1.patch {
-    inherit (cudaLibPaths)
-      libcudart
-      libcufile
-      libnvjitlink
-      libnvml
-      libnvrtc
-      libnvvm
-      ;
-  };
+  nvidiaLibsPatch = ./patch-nvidia-libs-paths_13_1.patch;
 
   pythonImportsCheck = [
     "cuda.bindings._nvml"

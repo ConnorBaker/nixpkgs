@@ -47,24 +47,23 @@ let
       if cudaOlder "13.0" then "${cudaPackages.cuda_nvcc}/nvvm" else lib.getLib cudaPackages.libnvvm;
   };
 
+  # The bindings and toolkit share a major.minor version. Their patch releases differ.
   versionSpecificAttrs =
-    let
-      args = {
-        inherit replaceVars cudaLibPaths;
-      };
-    in
     {
-      # cuda-bindings patch versions DO NOT correspond to cuda toolkits' own path versions.
-      # Only major.minor is supposed to match
-      "12.9" = import ./12_9.nix args;
-      "13.0" = import ./13_0.nix args;
-      "13.1" = import ./13_1.nix args;
-      "13.2" = import ./13_2.nix args;
-      "13.3" = import ./13_3.nix args;
-      "13.4" = import ./13_4.nix args;
-      "13.5" = import ./13_5.nix args;
+      "12.9" = import ./12_9.nix;
+      "13.0" = import ./13_0.nix;
+      "13.1" = import ./13_1.nix;
+      "13.2" = import ./13_2.nix;
+      "13.3" = import ./13_3.nix;
+      "13.4" = import ./13_4.nix;
+      "13.5" = import ./13_5.nix;
     }
     .${cudaVersion} or (throw "Unsupported cuda-bindings version: ${cudaVersion}");
+
+  # Each release patch names the libraries it uses. replaceVars rejects unknown placeholders.
+  inherit (versionSpecificAttrs) nvidiaLibsPatch;
+  patchText = builtins.readFile nvidiaLibsPatch;
+  patchPaths = lib.filterAttrs (name: _: lib.hasInfix "@${name}@" patchText) cudaLibPaths;
 
   inherit (cudaPackages) cudaOlder cudaAtLeast;
 in
@@ -94,7 +93,7 @@ buildPythonPackage (finalAttrs: {
   patchFlags = [ "-p2" ];
 
   patches = [
-    versionSpecificAttrs.nvidiaLibsPatch
+    (replaceVars nvidiaLibsPatch patchPaths)
   ];
 
   sourceRoot = "${finalAttrs.src.name}/${versionSpecificAttrs.sourceDir or "cuda_bindings"}";

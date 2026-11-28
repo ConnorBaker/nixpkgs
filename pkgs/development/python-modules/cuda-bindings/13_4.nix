@@ -1,23 +1,8 @@
 {
-  replaceVars,
-  cudaLibPaths,
-}:
-{
   version = "13.4.4";
   sourceHash = "sha256-XO9yKpae5HfgaEQneSQNgf5Pm8WpS0YNRIi6IZDpiZI=";
 
-  nvidiaLibsPatch = replaceVars ./patch-nvidia-libs-paths_13_4.patch {
-    inherit (cudaLibPaths)
-      libcudart
-      libcudla
-      libcufile
-      libnvfatbin
-      libnvjitlink
-      libnvml
-      libnvrtc
-      libnvvm
-      ;
-  };
+  nvidiaLibsPatch = ./patch-nvidia-libs-paths_13_4.patch;
 
   # Remove cuda-pathfinder from build-system requirements
   postPatch = ''

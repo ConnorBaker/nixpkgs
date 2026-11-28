@@ -1,20 +1,8 @@
 {
-  replaceVars,
-  cudaLibPaths,
-}:
-{
   version = "13.0.3";
   sourceHash = "sha256-Uq1oQWtilocQPh6cZ3P/L/L6caCHv17u1y67sm5fhhA=";
 
-  nvidiaLibsPatch = replaceVars ./patch-nvidia-libs-paths_13_0.patch {
-    inherit (cudaLibPaths)
-      libcudart
-      libcufile
-      libnvjitlink
-      libnvrtc
-      libnvvm
-      ;
-  };
+  nvidiaLibsPatch = ./patch-nvidia-libs-paths_13_0.patch;
 
   postPatch = ''
     substituteInPlace pyproject.toml \

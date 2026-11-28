@@ -1,26 +1,11 @@
 {
-  replaceVars,
-  cudaLibPaths,
-}:
-{
   version = "13.5.0";
   # The CUDA 13 bindings moved to their own source root in 13.5
   # https://github.com/NVIDIA/cuda-python/pull/3147
   sourceDir = "cuda_bindings_13";
   sourceHash = "sha256-9cQS4WFXkR4BynrfdPaeG3+oFd4DPMJt3E+zPyTixJQ=";
 
-  nvidiaLibsPatch = replaceVars ./patch-nvidia-libs-paths_13_5.patch {
-    inherit (cudaLibPaths)
-      libcudart
-      libcudla
-      libcufile
-      libnvfatbin
-      libnvjitlink
-      libnvml
-      libnvrtc
-      libnvvm
-      ;
-  };
+  nvidiaLibsPatch = ./patch-nvidia-libs-paths_13_5.patch;
 
   # Remove cuda-pathfinder from build-system requirements
   postPatch = ''
