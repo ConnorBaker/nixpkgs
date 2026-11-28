@@ -12,10 +12,11 @@ package set by [cuda-packages.nix](../../top-level/cuda-packages.nix).
 
 - `_cuda`: Fixed-point used to configure, construct, and extend the CUDA package
     set. This includes NVIDIA manifests.
+- [`backendStdenv`](backendStdenv) selects the host compiler for NVCC and resolves the target CUDA capabilities.
 - `buildRedist`: Contains the logic to build packages using NVIDIA's manifests.
 - `packages`: Contains packages which exist in every instance of the CUDA
-    package set. These packages are built in a `by-name` fashion.
-- `tests`: Contains tests which can be run against the CUDA package set.
+    package set. These packages are built in a `by-name` fashion and include
+    the [CUDA package set tests](packages/tests).
 
 Many redistributable packages are in the `packages` directory. Their presence
 ensures that, even if a CUDA package set which no longer includes a given package
@@ -47,37 +48,12 @@ not straightforward to include. These packages are:
 > paths to stubs with `extraAutoPatchelfLibs`; the stubs are meant to be used for
 > projects where linking against libraries available only at runtime is unavoidable.
 
-### CUDA Compatibility
+## CUDA driver compatibility
 
-NVIDIA's forward-compatibility package supplies user-space `libcuda.so.1` and
-matching compiler components for supported older host drivers. The CUDA package
-set includes `cudaPackages.cuda_compat` when NVIDIA publishes the archive. At
-first lookup, the selector compares its user-space release with the running
-host kernel driver's release and checks the supported kernel branches. [NVIDIA forward compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/latest/forward-compatibility.html)
+NVIDIA's `cuda_compat` backports user-space driver components to supported older kernel drivers.
+For package inputs, the first-lookup rules, and how to inspect a built executable, see
+[CUDA driver selection](driver-compatibility.md).
 
-#### Source
-
-Up to CUDA 13.3, `cuda_compat` is part of the CUDA manifest. Starting with CUDA
-13.4, NVIDIA only lists `cuda_compat_orin` (Jetson) there, and publishes
-`cuda_compat` under the `nvidia-driver` redistributable directory instead:
-
-```
-https://developer.download.nvidia.com/compute/nvidia-driver/redist/cuda_compat/<redistSystem>/cuda_compat-<redistSystem>-<driverVersion>_cuda<major.minor>-archive.tar.xz
-```
-
-The driver manifests list these archives only from driver 620.70.06 (CUDA 13.5)
-on, so we maintain manifests containing only `cuda_compat` in
-[`_cuda/manifests/nvidia-driver`](./_cuda/manifests/nvidia-driver/README.md),
-made by hand for older drivers. Package sets select one with the `nvidia-driver`
-key in [cuda-packages.nix](../../top-level/cuda-packages.nix), and `cuda_compat`
-uses it when the CUDA manifest has no `cuda_compat` entry. We pick the latest
-driver release built for each CUDA release (e.g. 615.71.10 for CUDA 13.4 and
-620.70.06 for CUDA 13.5).
-
-#### Runtime selection
-
-The shared CUDA runtime propagates the packaging hook to its consumers. CUDA
-redistributables also receive the hook directly. It handles ordinary driver
-opens inside vendor libraries and eager dependencies in participating glibc
-executables. A stock process loading a directly linked plugin can bind the
-host driver before any Nix selection code runs. [Implementation, experiments and limits](driver-compatibility.md)
+The package uses the archive from the CUDA manifest through CUDA 13.3. From CUDA 13.4,
+pin the latest `nvidia-driver` release built for that toolkit in the package set.
+[Package set pins](../../top-level/cuda-packages.nix) · [Driver manifest update instructions](_cuda/manifests/nvidia-driver/README.md)

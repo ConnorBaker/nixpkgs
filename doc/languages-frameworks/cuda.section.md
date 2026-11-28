@@ -26,10 +26,10 @@ All CUDA package sets include common CUDA packages like `libcublas`, `cudnn`, `t
 CUDA support is not enabled by default in Nixpkgs. To enable CUDA support, make sure Nixpkgs is imported with a configuration similar to the following:
 
 ```nix
-{ pkgs }:
+{ pkgs, ... }:
 {
   allowUnfreePredicate = pkgs._cuda.lib.allowUnfreeCudaPredicate;
-  cudaCapabilities = [ <target-architectures> ];
+  cudaCapabilities = [ "8.9" ]; # Ada Lovelace
   cudaForwardCompat = true;
   cudaSupport = true;
 }
@@ -39,7 +39,7 @@ The majority of CUDA packages are unfree, so either `allowUnfreePredicate` or `a
 
 The `cudaSupport` configuration option is used by packages to conditionally enable CUDA-specific functionality. This configuration option is commonly used by packages which can be built with or without CUDA support.
 
-The `cudaCapabilities` configuration option specifies a list of CUDA capabilities. Packages may use this option to control device code generation to take advantage of architecture-specific functionality, speed up compile times by producing less device code, or slim package closures. For example, you can build for Ada Lovelace GPUs with `cudaCapabilities = [ "8.9" ];`. If `cudaCapabilities` is not provided, the default value is calculated per-package set, derived from a list of GPUs supported by that CUDA version. Please consult [supported GPUs](https://en.wikipedia.org/wiki/CUDA#GPUs_supported) for specific cards. Library maintainers should consult [NVCC Docs](https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/) and its release notes.
+The `cudaCapabilities` configuration option specifies a list of CUDA capabilities. Packages may use this option to control device code generation to take advantage of architecture-specific functionality, speed up compile times by producing less device code, or slim package closures. If `cudaCapabilities` is not provided, the default value is calculated per-package set, derived from a list of GPUs supported by that CUDA version. Please consult [supported GPUs](https://en.wikipedia.org/wiki/CUDA#GPUs_supported) for specific cards. Library maintainers should consult [NVCC Docs](https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/) and its release notes.
 
 ::: {.caution}
 Certain CUDA capabilities are not targeted by default, including capabilities belonging to the Jetson family of devices (e.g. `8.7`, which corresponds to the Jetson Orin) or non-baseline feature-sets (e.g. `9.0a`, which corresponds to the Hopper exclusive feature set). If you need to target these capabilities, you must explicitly set `cudaCapabilities` to include them.
@@ -49,11 +49,11 @@ The `cudaForwardCompat` boolean configuration option determines whether PTX supp
 
 ### Running against the host driver {#cuda-host-driver}
 
-On x86-64 and AArch64 Linux with glibc, packaged CUDA libraries can use NVIDIA's user-space `libcuda.so.1` and matching compiler libraries from `cudaPackages.cuda_compat` when the toolkit provides a supported archive. The host supplies the kernel driver. Selection happens at runtime without an option or a launch wrapper.
+On x86-64 and AArch64 Linux with glibc, Nixpkgs CUDA packages can select NVIDIA's user-space backport, `cudaPackages.cuda_compat`, automatically. The kernel driver comes from the host. On NixOS, other Linux distributions and inside containers, expose the GPU and make the host's user-space libraries visible for host-driver lookup. Selection works with the application's usual launch command. Remove the obsolete `enableCudaDriverCompat` setting from older configurations. [Container setup](#cuda-docker-podman)
 
-When a packaged CUDA library first opens `libcuda.so.1` inside a stock host process, it can select its toolkit's forward-compatibility library if its release is newer and NVIDIA lists the host kernel branch. This includes plugins that link the packaged CUDA runtime statically. Executables built with the normal `cuda_cudart` development input consider the newest eligible `libcuda` from all participating CUDA outputs already loaded. This also covers a direct ELF dependency on the Driver API. Further lookups by that name reuse the library while it remains loaded in the same namespace.
+At the first lookup of `libcuda.so.1` by name, the backport is eligible if the NVIDIA control device is accessible, the backport is newer than the running kernel driver, and NVIDIA lists that kernel branch. Otherwise the usual driver search applies. Further lookups by name reuse the driver while it remains loaded in the same loader namespace. Dedicated Orin builds and WSL use host lookup. NVIDIA limits forward compatibility to supported hardware. [NVIDIA's forward-compatibility guide](https://docs.nvidia.com/deploy/cuda-compatibility/latest/forward-compatibility.html)
 
-The host must expose the GPU to the process. NVIDIA restricts forward compatibility to supported hardware. A stock process loading a plugin linked directly to `libcuda.so.1` resolves that dependency before the plugin runs. A stock library making its own `dlopen` also follows the host search. Once either binds the host driver, subsequent SONAME lookups reuse it in that namespace. [NVIDIA's forward-compatibility guide](https://docs.nvidia.com/deploy/cuda-compatibility/latest/forward-compatibility.html)
+On supported glibc loaders, an executable built with `buildInputs = [ cudaPackages.cuda_cudart ];` can select the newest eligible backport from participating CUDA outputs loaded in its namespace. This covers direct Driver API linkage and plugins. In a process without the auditor, a plugin using packaged shared or static CUDART can still select its own toolkit's backport. If the plugin links directly to `libcuda.so.1` or makes the first call to an unwrapped `dlopen`, glibc uses its usual search. The maintainer guide is in `pkgs/development/cuda-modules/driver-compatibility.md`.
 
 ### Modifying CUDA package sets {#cuda-modifying-cuda-package-sets}
 
@@ -75,7 +75,7 @@ The `_cuda` attribute set previously exposed `fixups`, an attribute set mapping 
 
 CUDA package sets are scopes and provide the usual `overrideScope` attribute for overriding package attributes (see the note about `_cuda` in [Configuring CUDA package sets](#cuda-modifying-cuda-package-sets)).
 
-Inspired by `pythonPackagesExtensions`, the `_cuda.extensions` attribute is a list of extensions applied to every version of the CUDA package set, allowing modification of all versions of the CUDA package set without needing to know their names or explicitly enumerate and modify them. As an example, disabling `cuda_compat` across all CUDA package sets can be accomplished with this overlay:
+Like `pythonPackagesExtensions`, `_cuda.extensions` applies each extension to every CUDA package set. For example, this overlay removes the compatibility archive from every set, leaving driver lookup to the host.
 
 ```nix
 final: prev: {
@@ -120,7 +120,7 @@ These settings ensure that the CUDA setup hooks function as intended.
 When using `callPackage`, you can choose to pass in a different variant, e.g. when a package requires a specific version of CUDA:
 
 ```nix
-{ mypkg = callPackage { cudaPackages = cudaPackages_12_6; }; }
+{ mypkg = callPackage ./mypkg.nix { cudaPackages = cudaPackages_12_8; }; }
 ```
 
 ::: {.caution}

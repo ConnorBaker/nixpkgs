@@ -50,6 +50,9 @@
   "cuda-gpu-unlock": [
     "index.html#cuda-gpu-unlock"
   ],
+  "cuda-host-driver": [
+    "index.html#cuda-host-driver"
+  ],
   "cuda-modifying-cuda-package-sets": [
     "index.html#cuda-modifying-cuda-package-sets",
     "index.html#cuda-configuring-cuda-package-sets"
