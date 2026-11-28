@@ -139,13 +139,13 @@ let
           autoAddDriverRunpath
           autoPatchelfHook
           fetchurl
-          patchelf
           srcOnly
           stdenv
           stdenvNoCC
           zstd
           testers
           ;
+        inherit (pkgs.buildPackages) patchelf;
         inherit (finalCudaPackages)
           autoAddCudaCompatRunpath
           backendStdenv
