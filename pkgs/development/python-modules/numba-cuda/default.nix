@@ -1,7 +1,6 @@
 {
   lib,
   config,
-  addDriverRunpath,
   buildPythonPackage,
   cudaPackages,
   fetchFromGitHub,
@@ -36,14 +35,6 @@ let
       "${lib.getLib cudaPackages.cuda_nvcc}/nvvm"
     else
       lib.getLib cudaPackages.libnvvm;
-
-  libCudaDir =
-    # `cuda_compat` provides `libcuda.so` in its `compat` directory
-    if (cudaPackages.cuda_compat.meta.available or false) then
-      "${cudaPackages.cuda_compat}/compat"
-    # Else: the host driver library
-    else
-      "${addDriverRunpath.driverLink}/lib";
 
   cudartInclude = "${lib.getInclude cudaPackages.cuda_cudart}/include";
   # `cuda/atomic` & al., to compile the NRT headers with NVRTC
@@ -83,17 +74,15 @@ buildPythonPackage.override { stdenv = cudaPackages.backendStdenv; } (finalAttrs
           "if numpy_version >= (2, 0):" \
           "if (2, 0) <= numpy_version < (2, 5):"
     ''
-    # `libcuda.so` is looked up in hardcoded FHS dirs, and the `NUMBA_CUDA_DRIVER` override is gone
     + ''
-      substituteInPlace numba_cuda/numba/cuda/cudadrv/driver.py \
-        --replace-fail \
-          'dldir = ["/usr/lib", "/usr/lib64"]' \
-          'dldir = ["${libCudaDir}"]'
+      cp ${cudaPackages.pythonDriverLookup} numba_cuda/numba/cuda/cudadrv/_nix_driver.py
     ''
     # Expanded at parse time even when overridden, making the build log look like `make` failed
     + ''
       substituteInPlace testing/Makefile \
-        --replace-fail "GPU_CC := " "GPU_CC ?= "
+        --replace-fail \
+          "GPU_CC := " \
+          "GPU_CC ?= "
     ''
     # `determine_include_flags()` wants a single `INCLUDES=` line from `nvcc -v`; nixpkgs' prints
     # two, neither carrying the runtime headers

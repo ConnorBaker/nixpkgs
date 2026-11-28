@@ -49,13 +49,11 @@ not straightforward to include. These packages are:
 
 ### CUDA Compatibility
 
-[CUDA Compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/),
-available as `cudaPackages.cuda_compat`, is a component which makes it possible
-to run applications built against a newer CUDA toolkit (for example CUDA 12) on
-a machine with an older CUDA driver (for example CUDA 11), which isn't possible
-out of the box. It is available on `linux-x86_64` and `linux-sbsa` (datacenter
-GPUs only), and on Jetson. It must be enabled with
-`config.enableCudaDriverCompat = true`.
+NVIDIA's forward-compatibility package supplies user-space `libcuda.so.1` and
+matching compiler components for supported older host drivers. The CUDA package
+set includes `cudaPackages.cuda_compat` when NVIDIA publishes the archive. At
+first lookup, the selector compares its user-space release with the running
+host kernel driver's release and checks the supported kernel branches. [NVIDIA forward compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/latest/forward-compatibility.html)
 
 #### Source
 
@@ -76,35 +74,10 @@ uses it when the CUDA manifest has no `cuda_compat` entry. We pick the latest
 driver release built for each CUDA release (e.g. 615.71.10 for CUDA 13.4 and
 620.70.06 for CUDA 13.5).
 
-#### Functioning
+#### Runtime selection
 
-`cuda_compat` simply provides a new `libcuda.so` (and associated variants) that
-needs to be used in place of the default CUDA driver's `libcuda.so`. However,
-the other shared libraries of the default driver must still be accessible:
-`cuda_compat` isn't a complete drop-in replacement for the driver (and that's
-the point, otherwise, it would just be a newer driver).
-
-Nvidia's recommendation is to set `LD_LIBRARY_PATH` to point to `cuda_compat`'s
-driver. This is fine for a manual, one-shot usage, but in general setting
-`LD_LIBRARY_PATH` is a red flag. This is global state which short-circuits most
-of other dynamic library resolution mechanisms and can break things in
-non-obvious ways, especially with other Nix-built software.
-
-#### CUDA Compat with Nix
-
-Since `cuda_compat` is a known derivation, the easy way to do this in Nix would
-be to add `cuda_compat` as a dependency of CUDA libraries and applications and
-let Nix do its magic by filling the `DT_RUNPATH` fields. However,
-`cuda_compat` itself depends on `libnvrm_mem` and `libnvrm_gpu` which are loaded
-dynamically at runtime from `/run/opengl-driver`. This doesn't please the Nix
-sandbox when building, which can't find those (a second minor issue is that
-`addOpenGLRunpathHook` prepends the `/run/opengl-driver` path, so that would
-still take precedence).
-
-The current solution is to do something similar to `addOpenGLRunpathHook`: the
-`addCudaCompatRunpathHook` prepends the path to `cuda_compat`'s `libcuda.so`
-to the `DT_RUNPATH` of whichever package includes the hook as a dependency, and
-we include the hook by default for packages in `cudaPackages` (by adding it as an
-input in `genericManifestBuilder`). We also make sure it's included after
-`addOpenGLRunpathHook`, so that it appears _before_ in the `DT_RUNPATH` and
-takes precedence.
+The shared CUDA runtime propagates the packaging hook to its consumers. CUDA
+redistributables also receive the hook directly. It handles ordinary driver
+opens inside vendor libraries and eager dependencies in participating glibc
+executables. A stock process loading a directly linked plugin can bind the
+host driver before any Nix selection code runs. [Implementation, experiments and limits](driver-compatibility.md)

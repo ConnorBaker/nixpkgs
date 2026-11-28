@@ -107,8 +107,6 @@ let
     rev = "072586a71b55b7f8c584153d223e95687148a900";
     hash = "sha256-lV+VZi2b4SQlRYrhKx9Dxc6HlDEFz3newvcBjTekupo=";
   };
-
-  isCudaJetson = cudaSupport && cudaPackages.flags.isJetsonBuild;
 in
 effectiveStdenv.mkDerivation (finalAttrs: {
   pname = "onnxruntime";
@@ -179,9 +177,6 @@ effectiveStdenv.mkDerivation (finalAttrs: {
   )
   ++ lib.optionals cudaSupport [
     cudaPackages.cuda_nvcc
-  ]
-  ++ lib.optionals isCudaJetson [
-    cudaPackages.autoAddCudaCompatRunpath
   ];
 
   buildInputs = [

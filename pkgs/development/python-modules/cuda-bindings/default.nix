@@ -28,16 +28,9 @@
 
 let
   cudaVersion = cudaPackages.cudaMajorMinorVersion;
+  inherit (cudaPackages.autoAddCudaCompatRunpath) driverLookup;
 
   cudaLibPaths = {
-    libcuda =
-      # Use cuda_compat to provide libcuda.so from its `compat` directory
-      if (cudaPackages.cuda_compat.meta.available or false) then
-        "${cudaPackages.cuda_compat}/compat"
-
-      # Else, use the host CUDA driver library
-      else
-        "${addDriverRunpath.driverLink}/lib";
     libcudart = lib.getLib cudaPackages.cuda_cudart;
     # libcudla is only available on Xavier and Orin Jetson devices
     libcudla =
@@ -106,23 +99,16 @@ buildPythonPackage (finalAttrs: {
 
   sourceRoot = "${finalAttrs.src.name}/${versionSpecificAttrs.sourceDir or "cuda_bindings"}";
 
-  postPatch =
-    # Since 13.4, libcuda is loaded from driver_linux.pyx, handled by nvidiaLibsPatch
-    lib.optionalString (cudaOlder "13.4") ''
-      substituteInPlace cuda/bindings/_internal/nvjitlink_linux.pyx \
-        --replace-fail \
-          "handle = dlopen('libcuda.so.1'" \
-          "handle = dlopen('${cudaLibPaths.libcuda}/libcuda.so.1'"
-
-      substituteInPlace cuda/bindings/_bindings/cydriver.pyx.in \
-        --replace-fail \
-          "path = 'libcuda.so.1'" \
-          "path = '${cudaLibPaths.libcuda}/libcuda.so.1'"
-    ''
-    + (versionSpecificAttrs.postPatch or "");
+  postPatch = versionSpecificAttrs.postPatch or "";
 
   preBuild = ''
     export CUDA_PYTHON_PARALLEL_LEVEL=$NIX_BUILD_CORES
+    CUDA_BINDINGS_LOOKUP=${driverLookup.symbol or "__real_dlopen"} \
+      CUDA_BINDINGS_HOST_ANCHOR=${cudaPackages.pythonDriverLookup.host} \
+      ${cudaPackages.cudaDriverSelector.compileObject} nix_cuda_bindings explicit_tail_calls,link_llvm_intrinsics \
+        ${./driver-wrap.rs} -o "$TMPDIR/nix-cuda-bindings.o"
+    $AR rcs "$TMPDIR/libnix-cuda-bindings.a" "$TMPDIR/nix-cuda-bindings.o"
+    export NIX_LDFLAGS+=" --wrap=dlopen $TMPDIR/libnix-cuda-bindings.a --push-state --as-needed ${driverLookup.path or ""} --pop-state"
   '';
 
   build-system = [

@@ -115,13 +115,7 @@ backendStdenv.mkDerivation (finalAttrs: {
     "NEIGHBORS_ANN_VAMANA_TEST"
   ];
 
-  # stolen from cutlass
-  # NOTE: Because the test cases immediately create and try to run the binaries, we don't have an opportunity
-  # to patch them with autoAddDriverRunpath. To get around this, we add the driver runpath to the environment.
-  # TODO: This would break Jetson when using cuda_compat, as it must come first.
-  preCheck = lib.optionalString finalAttrs.finalPackage.doCheck ''
-    export LD_LIBRARY_PATH="$(readlink -mnv "${addDriverRunpath.driverLink}/lib")"
-  '';
+  preCheck = addDriverRunpath.addDriverToLibraryPath;
 
   passthru = {
     tests.cmake-config = testers.hasCmakeConfigModules {

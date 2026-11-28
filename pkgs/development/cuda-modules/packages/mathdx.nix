@@ -138,7 +138,7 @@ buildRedist (finalAttrs: {
     checkPhase = ''
       runHook preCheck
 
-      export LD_LIBRARY_PATH="$(readlink -mnv "${addDriverRunpath.driverLink}/lib")"
+      ${addDriverRunpath.addDriverToLibraryPath}
       for example in ${
         lib.escapeShellArgs (
           lib.concatLists (lib.mapAttrsToList (project: map (target: "build-${project}/${target}")) examples)

@@ -1,6 +1,5 @@
 {
   lib,
-  addDriverRunpath,
   config,
   buildPythonPackage,
   fetchFromGitHub,
@@ -33,14 +32,6 @@
   cuda-tile,
 }:
 let
-  libCudaDir =
-    # `cuda_compat` provides a newer `libcuda.so` in its `compat` directory
-    if (cudaPackages.cuda_compat.meta.available or false) then
-      "${cudaPackages.cuda_compat}/compat"
-    # Else: the host driver library
-    else
-      "${addDriverRunpath.driverLink}/lib";
-
   # https://github.com/NVIDIA/cutile-python/blob/v1.7.0/cmake/FetchXLAHeaders.cmake#L5-L6
   xla = fetchFromGitHub {
     owner = "openxla";
@@ -67,7 +58,9 @@ buildPythonPackage.override { stdenv = cudaPackages.backendStdenv; } (finalAttrs
 
   postPatch = ''
     substituteInPlace pyproject.toml \
-      --replace-fail "setuptools==84.0.0" "setuptools"
+      --replace-fail \
+        "setuptools==84.0.0" \
+        "setuptools"
   ''
   # Otherwise fails to find libc
   # xla_ffi.cpp:(.text+0x308): undefined reference to `__stack_chk_fail'
@@ -92,12 +85,12 @@ buildPythonPackage.override { stdenv = cudaPackages.backendStdenv; } (finalAttrs
   + ''
     echo "${finalAttrs.version}" >src/cuda/tile/VERSION
   ''
-  # `libcuda.so.1` is loaded by name, which the dynamic loader doesn't find outside of FHS dirs
   + ''
+    cp ${cudaPackages.pythonDriverLookup} src/cuda/tile/_nix_driver.py
     substituteInPlace src/cuda/tile/_load_libcuda.py \
       --replace-fail \
-        '_dll = CDLL("libcuda.so.1")' \
-        '_dll = CDLL("${libCudaDir}/libcuda.so.1")'
+        'from ctypes import CDLL' \
+        'from ._nix_driver import load_driver as CDLL'
   ''
   # Use tileiras from Nixpkgs instead of searching for it in /usr/local/cuda*, which is the last place cuTile looks
   # (after the nvidia-cuda-tileiras Python package, PATH, and $CUDA_HOME/bin).

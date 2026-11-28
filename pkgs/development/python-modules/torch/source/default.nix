@@ -175,8 +175,6 @@ let
   supportedCudaCapabilities = lists.intersectLists flags.cudaCapabilities supportedTorchCudaCapabilities;
   unsupportedCudaCapabilities = lists.subtractLists supportedCudaCapabilities flags.cudaCapabilities;
 
-  isCudaJetson = cudaSupport && cudaPackages.flags.isJetsonBuild;
-
   # Use trivial.warnIf to print a warning if any unsupported GPU targets are specified.
   gpuArchWarner =
     supported: unsupported:
@@ -639,7 +637,6 @@ buildPythonPackage.override { inherit stdenv; } (finalAttrs: {
       cuda_nvcc
     ]
   )
-  ++ lib.optionals isCudaJetson [ cudaPackages.autoAddCudaCompatRunpath ]
   # FindMPI locates MPI through its compiler wrappers (mpicc, mpicxx), which must be on PATH.
   ++ lib.optionals MPISupport [ mpi ]
   ++ lib.optionals rocmSupport [ rocmtoolkit_joined ];

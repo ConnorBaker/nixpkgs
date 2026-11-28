@@ -92,3 +92,18 @@ index 8eb881b..73e05ae 100644
  
      if config.CUDA_NVRTC_EXTRA_SEARCH_PATHS:
          extra_includes = config.CUDA_NVRTC_EXTRA_SEARCH_PATHS.split(":")
+--- a/numba_cuda/numba/cuda/cudadrv/driver.py
++++ b/numba_cuda/numba/cuda/cudadrv/driver.py
+@@ -165,10 +165,9 @@
+         dldir = ["/usr/local/cuda/lib"]
+         dlnames = ["libcuda.dylib"]
+     else:
+-        # Assume to be *nix like
+-        dlloader = ctypes.CDLL
++        from ._nix_driver import load_driver as dlloader
+         dldir = ["/usr/lib", "/usr/lib64"]
+-        dlnames = ["libcuda.so", "libcuda.so.1"]
++        dlnames = ["libcuda.so.1", "libcuda.so"]
+
+     # First search for the name in the default library path.
+     # If that is not found, try specific common paths.

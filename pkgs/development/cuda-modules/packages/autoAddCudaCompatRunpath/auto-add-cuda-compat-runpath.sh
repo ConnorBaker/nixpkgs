@@ -1,33 +1,33 @@
 # shellcheck shell=bash
-# Patch all dynamically linked, ELF files with the CUDA driver (libcuda.so)
-# coming from the cuda_compat package by adding it to the RUNPATH.
-echo "Sourcing auto-add-cuda-compat-runpath-hook"
-
-# shellcheck disable=SC2157
-if [[ -z "@libcudaPath@" ]]; then
-  echo "auto-add-cuda-compat-runpath-hook: cuda_compat not available, skipping hook"
-  return
+# Only process the outputs of derivations that acquired this as a native build input.
+if [[ ${hostOffset:--1} != -1 || ${targetOffset:-0} != 0 ]]; then
+    return 0
 fi
 
-addCudaCompatRunpath() {
-  local libPath
-  local origRpath
+if [[ ! -v cudaCompatPolicies ]]; then
+    # Wait until setup hooks (including autoPatchelf) have registered their
+    # post-fixups. Explicit phase lists may omit prePhases.
+    preFixupHooks+=(registerCudaCompatFixup)
+    declare -ag cudaCompatPolicies=()
+fi
+cudaCompatPolicies+=(--policy '@marker@' '@auditor@' '@lookup@' '@symbol@' '@interpreter@')
 
-  if [[ $# -eq 0 ]]; then
-    nixLog "no library path provided" >&2
-    exit 1
-  elif [[ $# -gt 1 ]]; then
-    nixLog "too many arguments" >&2
-    exit 1
-  elif [[ $1 == "" ]]; then
-    nixLog "empty library path" >&2
-    exit 1
-  else
-    libPath="$1"
-  fi
-
-  origRpath="$(patchelf --print-rpath "$libPath")"
-  patchelf --set-rpath "@libcudaPath@:$origRpath" "$libPath"
+registerCudaCompatFixup() {
+    if [[ -z ${cudaCompatFixupRegistered:-} ]]; then
+        postFixupHooks+=(fixupCudaCompat)
+        cudaCompatFixupRegistered=1
+    fi
 }
 
-postFixupHooks+=("autoFixElfFiles addCudaCompatRunpath")
+fixupCudaCompat() {
+    local output
+    local -a paths=() flags=()
+    for output in $(getAllOutputNames); do
+        [[ $output == stubs ]] || paths+=("${!output}")
+    done
+    (( ${#paths[@]} )) || return 0
+    if [[ -n ${cudaCompatWrapDlopen:-} ]]; then
+        flags+=(--wrap-dlopen "$cudaCompatWrapDlopen")
+    fi
+    '@python@' -B '@fixup@' --patchelf '@patchelf@' "${cudaCompatPolicies[@]}" "${flags[@]}" -- "${paths[@]}"
+}

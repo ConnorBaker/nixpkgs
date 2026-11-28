@@ -8,7 +8,6 @@
 
   nvidiaLibsPatch = replaceVars ./patch-nvidia-libs-paths_13_4.patch {
     inherit (cudaLibPaths)
-      libcuda
       libcudart
       libcudla
       libcufile

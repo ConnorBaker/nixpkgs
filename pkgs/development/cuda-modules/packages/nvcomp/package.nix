@@ -54,7 +54,7 @@ buildRedist (finalAttrs: {
     doCheck = true;
     checkPhase = ''
       runHook preCheck
-      export LD_LIBRARY_PATH="$(readlink -mnv "${addDriverRunpath.driverLink}/lib")"
+      ${addDriverRunpath.addDriverToLibraryPath}
       ./roundtrip
       runHook postCheck
     '';

@@ -28,16 +28,18 @@ index 8ff96640d..7eb262a22 100644
          }
          # Cache result
          get_cuda_paths._cached_result = d
-diff --git a/numba/cuda/cudadrv/driver.py b/numba/cuda/cudadrv/driver.py
-index bea271fce..79312f1ae 100644
 --- a/numba/cuda/cudadrv/driver.py
 +++ b/numba/cuda/cudadrv/driver.py
-@@ -118,7 +118,7 @@ def locate_driver_and_loader():
+@@ -116,10 +116,9 @@
+         dldir = ['/usr/local/cuda/lib']
+         dlnames = ['libcuda.dylib']
      else:
-         # Assume to be *nix like
-         dlloader = ctypes.CDLL
--        dldir = ['/usr/lib', '/usr/lib64']
-+        dldir = ['@libcuda@']
-         dlnames = ['libcuda.so', 'libcuda.so.1']
+-        # Assume to be *nix like
+-        dlloader = ctypes.CDLL
++        from ._nix_driver import load_driver as dlloader
+         dldir = ['/usr/lib', '/usr/lib64']
+-        dlnames = ['libcuda.so', 'libcuda.so.1']
++        dlnames = ['libcuda.so.1', 'libcuda.so']
  
      if envpath:
+         try:

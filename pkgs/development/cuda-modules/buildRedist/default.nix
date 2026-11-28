@@ -180,7 +180,7 @@ extendMkDerivation {
       # NOTE: The nil LSP gets angry if we do not parenthesize the default attrset.
       outputToPatterns ? {
         bin = [ "bin" ];
-        dev = [
+        dev = lib.optionals (finalAttrs.moveToDev or true) [
           "**/*.pc"
           "**/*.cmake"
         ];
@@ -222,6 +222,10 @@ extendMkDerivation {
       },
       ...
     }:
+    let
+      # The selector references cuda_compat. Applying it to the driver would create a cycle.
+      wrapDriverLookup = finalAttrs.pname != "cuda_compat" && autoAddCudaCompatRunpath.enableHook;
+    in
     {
       __structuredAttrs = true;
       strictDeps = true;
@@ -291,25 +295,19 @@ extendMkDerivation {
           }
         ))
         autoPatchelfHook
-        # This hook will make sure libcuda can be found
-        # in typically /lib/opengl-driver by adding that
-        # directory to the rpath of all ELF binaries.
-        # Check e.g. with `patchelf --print-rpath path/to/my/binary
+        # Keep host driver libraries discoverable, typically through /run/opengl-driver/lib.
         # TODO(@connorbaker): Given we'll have stubs available, we can switch from autoPatchelfIgnoreMissingDeps to
         # allowing autoPatchelf to find and link against the stub files and rely on removeStubsFromRunpathHook to
         # automatically find and replace those references with ones to the driver link lib directory.
         autoAddDriverRunpath
         markForCudatoolkitRootHook
       ]
-      # autoAddCudaCompatRunpath depends on cuda_compat and would cause
-      # infinite recursion if applied to `cuda_compat` itself (beside the fact
-      # that it doesn't make sense in the first place)
-      ++ lib.optionals (finalAttrs.pname != "cuda_compat" && autoAddCudaCompatRunpath.enableHook) [
-        # autoAddCudaCompatRunpath must appear AFTER autoAddDriverRunpath.
-        # See its documentation in ./setup-hooks/extension.nix.
-        autoAddCudaCompatRunpath
-      ]
+      ++ lib.optional wrapDriverLookup autoAddCudaCompatRunpath
       ++ nativeBuildInputs;
+
+      # Vendor libraries can be the first loader even in a non-Nix executable.
+      # Their ordinary dlopen imports are the entry point for library-only selection.
+      cudaCompatWrapDlopen = optionalString wrapDriverLookup autoAddCudaCompatRunpath.manifest;
 
       buildInputs = [
         # autoPatchelfHook will search for a libstdc++ and we're giving it

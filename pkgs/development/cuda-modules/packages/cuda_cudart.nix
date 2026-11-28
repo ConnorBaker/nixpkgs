@@ -1,40 +1,39 @@
 # TODO(@connorbaker): cuda_cudart.dev depends on crt/host_config.h, which is from
 # (getDev cuda_nvcc). It would be nice to be able to encode that.
 {
-  _cuda,
   addDriverRunpath,
+  autoAddCudaCompatRunpath,
   buildRedist,
   cccl,
-  cuda_compat,
   cuda_crt,
   cuda_nvcc,
   cudaAtLeast,
   lib,
   pkg-config,
+  removeStubsFromRunpathHook,
 }:
 buildRedist (finalAttrs: {
   redistName = "cuda";
   pname = "cuda_cudart";
 
-  # NOTE: A number of packages expect cuda_cudart to be in a single directory. We restrict the package to a single
-  # output to avoid breaking these assumptions. As an example, CMake expects the static libraries to exist alongside
-  # the dynamic libraries.
-  outputs = [
-    "out"
-  ];
+  # Keep the full SDK in one directory: CMake looks for static and shared
+  # libraries together. Only development consumers need the native fixup tools.
+  outputs = [ "out" ] ++ lib.optional autoAddCudaCompatRunpath.enableHook "dev";
+  moveToDev = false;
 
   # We have stubs but we don't have an explicit stubs output.
   includeRemoveStubsFromRunpathHook = true;
 
-  propagatedBuildOutputs =
-    # required by CMake
-    lib.optionals (lib.elem "static" finalAttrs.outputs) [ "static" ]
-    # always propagate, even when cuda_compat is used, to avoid symbol linking errors
-    ++ lib.optionals (lib.elem "stubs" finalAttrs.outputs) [ "stubs" ];
+  # CMake and the linker need these when callers split them into separate outputs.
+  propagatedBuildOutputs = lib.intersectLists finalAttrs.outputs [
+    "static"
+    "stubs"
+  ];
 
-  # When cuda_compat is available, propagate it.
-  # NOTE: `cuda_compat` can be disabled by setting the package to `null`. This is useful in cases where
-  # the host OS has a recent enough CUDA driver that the compatibility library isn't needed.
+  # The hook runs on the build machine and writes paths for the host. Keep this
+  # package set's hook when mkDerivation splices propagated native inputs.
+  propagatedNativeBuildInputs = lib.optional autoAddCudaCompatRunpath.enableHook autoAddCudaCompatRunpath.outPath;
+
   propagatedBuildInputs =
     # TODO(@SomeoneSerge): Consider propagating `crt/host_config.h`, but only
     # once we managed to split out `cuda_nvcc`'s headers into a separate output
@@ -48,40 +47,26 @@ buildRedist (finalAttrs: {
     # Add the dependency on CCCL's include directory.
     # - nv/target
     # TODO(@connorbaker): Check that the dependency offset for this is correct.
-    ++ [ (lib.getOutput "include" cccl) ]
-    # NOTE: cuda_compat may be null or unavailable
-    ++ lib.optionals (cuda_compat.meta.available or false) [ cuda_compat ];
+    ++ [ (lib.getOutput "include" cccl) ];
 
   allowFHSReferences = false;
 
-  # Patch the `cudart` package config files so they reference lib
+  # buildRedist has collected the vendor's .pc files in share/pkgconfig.
   postPatch = ''
-    local path=""
-    while IFS= read -r -d $'\0' path; do
-      nixLog "patching $path"
+    local pc
+    for pc in share/pkgconfig/{cuda,cudart}-*.pc; do
+      [[ -f $pc ]] || continue
       sed -i \
-        -e "s|^cudaroot\s*=.*\$||" \
-        -e "s|^Libs\s*:\(.*\)\$|Libs: \1 -Wl,-rpath,${addDriverRunpath.driverLink}/lib|" \
-        "$path"
-    done < <(find -iname 'cudart-*.pc' -print0)
-    unset -v path
-  ''
-  # Patch the `cuda` package config files so they reference stubs
-  # NOTE: Before CUDA 13.4, libdir pointed at lib and Libs used -L${libdir}, though libcuda.so is only in lib/stubs.
-  # CUDA 13.4 changed Libs to -L${libdir}/stubs. Since libdir is set to the stubs directory here, drop the extra /stubs.
-  # TODO: Will this always pull in the stubs output and cause its setup hook to be executed?
-  + ''
-    local path=""
-    while IFS= read -r -d $'\0' path; do
-      nixLog "patching $path"
-      sed -i \
-        -e "s|^cudaroot\s*=.*\$||" \
-        -e "s|^libdir\s*=.*/lib\$|libdir=''${!outputStubs:?}/lib/stubs|" \
-        -e "s|-L\''${libdir}/stubs\b|-L\''${libdir}|" \
-        -e "s|^Libs\s*:\(.*\)\$|Libs: \1 -Wl,-rpath,${addDriverRunpath.driverLink}/lib|" \
-        "$path"
-    done < <(find -iname 'cuda-*.pc' -print0)
-    unset -v path
+        -e '/^cudaroot\s*=/d' \
+        -e "s|''${!outputDev:?}|$out|g" \
+        -e '/^Libs\s*:/s|$| -Wl,-rpath,${addDriverRunpath.driverLink}/lib|' "$pc"
+      if [[ $pc == share/pkgconfig/cuda-* ]]; then
+        # Since 13.4 NVIDIA includes /stubs in Libs. Point both layouts to the stub output.
+        sed -i \
+          -e "s|^libdir\s*=.*/lib\$|libdir=''${!outputStubs:?}/lib/stubs|" \
+          -e 's|-L''${libdir}/stubs\b|-L''${libdir}|' "$pc"
+      fi
+    done
   '';
 
   # Namelink may not be enough, add a soname.
@@ -95,6 +80,28 @@ buildRedist (finalAttrs: {
     fi
     popd >/dev/null
   '';
+
+  postFixup =
+    lib.optionalString autoAddCudaCompatRunpath.enableHook ''
+      local archive="''${!outputStatic:?}/lib/libcudart_static.a"
+      if [[ -f $archive ]]; then
+        "$OBJCOPY" --redefine-sym "dlopen=${autoAddCudaCompatRunpath.driverLookup.symbol}_archive" "$archive" "$archive.new"
+        "$AR" rDs "$archive.new" "${autoAddCudaCompatRunpath.driverLookup.staticObject}"
+        mv "$archive.new" "$archive"
+      fi
+    ''
+    + lib.optionalString (lib.elem "dev" finalAttrs.outputs) ''
+      # Expose the SDK to getDev callers. Only out/lib has the runtime SONAME,
+      # so ordinary linkers and RPATH shrinking drop dev (and its build tools).
+      mkdir -p "$dev/lib" "$out/nix-support"
+      # SDK joins merge directories and link individual files from each component.
+      cp -rs "$out/include" "$out/share" "$dev/"
+      cp -rs "''${!outputStubs:?}/lib/stubs" "$dev/lib/"
+      ln -s "''${!outputLib:?}"/lib/*.so "''${!outputStatic:?}"/lib/*.a "$dev/lib/"
+      # Keep the CRT and CCCL headers available to consumers of the explicit out output.
+      cat "$dev/nix-support/propagated-build-inputs" >> "$out/nix-support/propagated-build-inputs"
+      echo "$out ${lib.getDev removeStubsFromRunpathHook}" >> "$dev/nix-support/propagated-build-inputs"
+    '';
 
   # Link through the installed package config files, which fails if their library paths are wrong.
   nativeInstallCheckInputs = [ pkg-config ];

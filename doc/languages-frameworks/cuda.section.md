@@ -47,6 +47,14 @@ Certain CUDA capabilities are not targeted by default, including capabilities be
 
 The `cudaForwardCompat` boolean configuration option determines whether PTX support for future hardware is enabled.
 
+### Running against the host driver {#cuda-host-driver}
+
+On x86-64 and AArch64 Linux with glibc, packaged CUDA libraries can use NVIDIA's user-space `libcuda.so.1` and matching compiler libraries from `cudaPackages.cuda_compat` when the toolkit provides a supported archive. The host supplies the kernel driver. Selection happens at runtime without an option or a launch wrapper.
+
+When a packaged CUDA library first opens `libcuda.so.1` inside a stock host process, it can select its toolkit's forward-compatibility library if its release is newer and NVIDIA lists the host kernel branch. This includes plugins that link the packaged CUDA runtime statically. Executables built with the normal `cuda_cudart` development input consider the newest eligible `libcuda` from all participating CUDA outputs already loaded. This also covers a direct ELF dependency on the Driver API. Further lookups by that name reuse the library while it remains loaded in the same namespace.
+
+The host must expose the GPU to the process. NVIDIA restricts forward compatibility to supported hardware. A stock process loading a plugin linked directly to `libcuda.so.1` resolves that dependency before the plugin runs. A stock library making its own `dlopen` also follows the host search. Once either binds the host driver, subsequent SONAME lookups reuse it in that namespace. [NVIDIA's forward-compatibility guide](https://docs.nvidia.com/deploy/cuda-compatibility/latest/forward-compatibility.html)
+
 ### Modifying CUDA package sets {#cuda-modifying-cuda-package-sets}
 
 CUDA package sets are defined in `pkgs/top-level/cuda-packages.nix`. A CUDA package set is created by `callPackage`-ing `pkgs/development/cuda-modules/default.nix` with an attribute set `manifests`, containing NVIDIA manifests for each redistributable. The manifests for supported redistributables are available through `_cuda.manifests` and live in `pkgs/development/cuda-modules/_cuda/manifests`.

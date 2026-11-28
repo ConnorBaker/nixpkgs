@@ -332,8 +332,6 @@ let
   supportedCudaCapabilities = lists.intersectLists flags.cudaCapabilities supportedTorchCudaCapabilities;
   unsupportedCudaCapabilities = lists.subtractLists supportedCudaCapabilities flags.cudaCapabilities;
 
-  isCudaJetson = cudaSupport && cudaPackages.flags.isJetsonBuild;
-
   # Use trivial.warnIf to print a warning if any unsupported GPU targets are specified.
   gpuArchWarner =
     supported: unsupported:
@@ -460,9 +458,6 @@ buildPythonPackage.override { stdenv = torch.stdenv; } (finalAttrs: {
   ++ lib.optionals cudaSupport [
     cudaPackages.cuda_nvcc
     autoAddDriverRunpath
-  ]
-  ++ lib.optionals isCudaJetson [
-    cudaPackages.autoAddCudaCompatRunpath
   ];
 
   build-system = [

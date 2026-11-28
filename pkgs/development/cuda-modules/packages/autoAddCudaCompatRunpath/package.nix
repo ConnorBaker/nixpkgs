@@ -1,31 +1,45 @@
-# autoAddCudaCompatRunpath hook must be added AFTER `setupCudaHook`. Both
-# hooks prepend a path with `libcuda.so` to the `DT_RUNPATH` section of
-# patched elf files, but `cuda_compat` path must take precedence (otherwise,
-# it doesn't have any effect) and thus appear first. Meaning this hook must be
-# executed last.
 {
-  autoFixElfFiles,
+  backendStdenv,
+  buildPackages,
   cuda_compat,
+  cudaDriverSelector,
   lib,
   makeSetupHook,
+  stdenv,
 }:
 let
-  # cuda_compat can be null or broken, depending on the platform, CUDA release, and compute capability.
-  # To avoid requiring all consumers of this hook to do these checks, we do them here; the hook is a no-op if
-  # cuda_compat is not available.
-  enableHook = cuda_compat.meta.available or false;
+  # Orin's nvgpu compute driver has its own upgrade package and BSP matrix.
+  # CUDA 13.2 also uses the generic SBSA package set for Orin targets.
+  enableHook =
+    stdenv.hostPlatform.libc == "glibc"
+    && (cuda_compat.meta.available or false)
+    && backendStdenv.hostRedistSystem != "linux-aarch64"
+    && !(stdenv.hostPlatform.isAarch64 && backendStdenv.cudaCapabilities == [ "8.7" ]);
+  manifest = lib.optionalString enableHook "${cuda_compat}/nix-support/nix-cuda-compat";
+  script =
+    if enableHook then
+      ./auto-add-cuda-compat-runpath.sh
+    else
+      builtins.toFile "no-cuda-driver-hook.sh" "";
+  driverLookup = lib.optionalAttrs enableHook {
+    path = "${cuda_compat}/libexec/libnix-cuda-driver-lookup.so";
+    staticObject = "${cuda_compat}/libexec/nix-cuda-static-lookup.o";
+    symbol = "nix_cuda_dlopen_${builtins.substring 0 32 (baseNameOf cuda_compat.outPath)}";
+  };
+  python = buildPackages.python3.withPackages (ps: [ ps.pyelftools ]);
 in
 makeSetupHook {
   name = "auto-add-cuda-compat-runpath-hook";
-  propagatedBuildInputs = lib.optionals enableHook [ autoFixElfFiles ];
-
-  substitutions = {
-    libcudaPath = lib.optionalString enableHook "${cuda_compat}/compat";
+  substitutions = lib.optionalAttrs enableHook {
+    marker = manifest;
+    auditor = "${cudaDriverSelector}/lib/libnix-cuda-audit.so";
+    lookup = driverLookup.path;
+    inherit (driverLookup) symbol;
+    interpreter = baseNameOf stdenv.cc.bintools.dynamicLinker;
+    python = python.interpreter;
+    fixup = "${../cudaDriverSelector/elf}/fixup.py";
+    patchelf = lib.getExe buildPackages.patchelfUnstable;
   };
-
-  passthru = {
-    inherit enableHook;
-  };
-
+  passthru = { inherit enableHook manifest driverLookup; };
   meta.license = lib.licenses.mit;
-} ./auto-add-cuda-compat-runpath.sh
+} script

@@ -38,7 +38,7 @@ backendStdenv.mkDerivation {
   doCheck = true;
   checkPhase = ''
     runHook preCheck
-    export LD_LIBRARY_PATH="$(readlink -mnv "${addDriverRunpath.driverLink}/lib")"
+    ${addDriverRunpath.addDriverToLibraryPath}
     for i in "''${!variants[@]}"; do
       nixLog "running the program built with ''${variants[$i]}"
       status=0

@@ -51,22 +51,18 @@ index a1a4472fe91..965d1bae5da 100644
  
  from .utils import FunctionNotFoundError, NotSupportedError
 -from cuda.pathfinder import load_nvidia_dynamic_lib
-+from ctypes import CDLL
++cimport cuda.bindings._lib.dlfcn as dlfcn
  
  
  ###############################################################################
-@@ -3799,7 +3799,13 @@ cpdef _inspect_function_pointer(str name):
+@@ -3799,7 +3799,9 @@ cpdef _inspect_function_pointer(str name):
  
  
  cdef void* load_library() except* with gil:
 -    cdef uintptr_t handle = load_nvidia_dynamic_lib("cuda")._handle_uint
-+    # Search like the dynamic linker would for a library with the driver link in its RUNPATH: LD_LIBRARY_PATH
-+    # first (e.g. a host driver exposed by nixglhost or a container runtime), then the configured path.
-+    cdef uintptr_t handle
-+    try:
-+        handle = CDLL("libcuda.so.1")._handle
-+    except OSError:
-+        handle = CDLL("@libcuda@/libcuda.so.1")._handle
++    cdef void *handle = dlfcn.dlopen("libcuda.so.1", dlfcn.RTLD_NOW)
++    if handle == NULL:
++        raise OSError(dlfcn.dlerror().decode())
      return <void*>handle
  
  
@@ -190,7 +186,7 @@ diff --git a/cuda_bindings_13/cuda/bindings/_internal/runtime_linux.pyx b/cuda_b
 index 0cbc3454ba2..6be8b7961e9 100644
 --- a/cuda_bindings_13/cuda/bindings/_internal/runtime_linux.pyx
 +++ b/cuda_bindings_13/cuda/bindings/_internal/runtime_linux.pyx
-@@ -9,11 +9,19 @@ import os
+@@ -9,11 +9,11 @@ import os
  
  from libc.stdint cimport uintptr_t
  
@@ -200,18 +196,10 @@ index 0cbc3454ba2..6be8b7961e9 100644
  cimport cuda.bindings._internal.runtime_ptds as ptds
  cimport cython
  
-+try:
-+    CDLL("libcuda.so.1")
-+except OSError:
-+    try:
-+        CDLL("@libcuda@/libcuda.so.1")
-+    except OSError:
-+        pass
-+
  
  ###############################################################################
  # Per-thread default stream dispatch
-@@ -50,14 +58,14 @@ include "../_lib/cyruntime/cyruntime.pxi"
+@@ -50,14 +50,14 @@ include "../_lib/cyruntime/cyruntime.pxi"
  cdef cudaError_t _getLocalRuntimeVersion(int* runtimeVersion) except ?cudaErrorCallRequiresNewerDriver nogil:
      # Load cudart dynamically to read its embedded version number.
      with gil:
